@@ -95,11 +95,20 @@ fn persist_results(results: &[MediaFile]) -> Result<(), String> {
             .unwrap_or("")
             .to_string();
 
+        // best-effort TMDB match for video files
+        let mut best_tmdb: Option<i64> = None;
+        if m.media_type == "video" {
+            match tmdb_best_match(&title) {
+                Ok(opt) => best_tmdb = opt,
+                Err(e) => eprintln!("tmdb lookup failed for '{}': {}", title, e),
+            }
+        }
+
         tx.execute(
             "INSERT INTO medias (path, title, media_type, last_position, synopsis_json, tmdb_id)
-             VALUES (?1, ?2, ?3, 0, NULL, NULL)
+             VALUES (?1, ?2, ?3, 0, NULL, ?4)
              ON CONFLICT(path) DO UPDATE SET media_type = excluded.media_type, title = excluded.title",
-            params![m.path, title, m.media_type],
+            params![m.path, title, m.media_type, best_tmdb],
         )
         .map_err(|e| format!("insert failed: {}", e))?;
     }
@@ -111,6 +120,55 @@ fn persist_results(results: &[MediaFile]) -> Result<(), String> {
 fn get_connection() -> Result<Connection, String> {
     let db_path = get_db_path()?;
     Connection::open(db_path).map_err(|e| e.to_string())
+}
+
+/// Best-effort TMDB search to return a tmdb_id for a title.
+/// Returns Ok(Some(id)) if a confident match is found, Ok(None) if not, Err on HTTP/parse errors.
+fn tmdb_best_match(title: &str) -> Result<Option<i64>, String> {
+    let api_key = match env::var("TMDB_API_KEY") {
+        Ok(k) => k,
+        Err(_) => return Ok(None), // no key => skip
+    };
+
+    let client = Client::new();
+
+    // Try movie first, then tv
+    let endpoints = [
+        "https://api.themoviedb.org/3/search/movie",
+        "https://api.themoviedb.org/3/search/tv",
+    ];
+
+    for ep in endpoints.iter() {
+        let resp = client
+            .get(*ep)
+            .query(&[("api_key", api_key.as_str()), ("query", title)])
+            .send()
+            .map_err(|e| format!("http error: {}", e))?;
+
+        if !resp.status().is_success() {
+            continue;
+        }
+
+        let v: serde_json::Value = resp.json().map_err(|e| format!("parse error: {}", e))?;
+        let results = v.get("results").and_then(|r| r.as_array()).ok_or("no results array")?;
+        if results.is_empty() {
+            continue;
+        }
+
+        if let Some(first) = results.get(0) {
+            let id = first.get("id").and_then(|i| i.as_i64()).ok_or("no id")?;
+            // prefer fairly popular / voted results to avoid weak matches
+            let popularity = first.get("popularity").and_then(|p| p.as_f64()).unwrap_or(0.0);
+            let vote_count = first.get("vote_count").and_then(|v| v.as_u64()).unwrap_or(0);
+
+            if popularity >= 2.0 || vote_count >= 20 {
+                return Ok(Some(id));
+            }
+            // otherwise continue to next endpoint or return None
+        }
+    }
+
+    Ok(None)
 }
 
 #[derive(Serialize)]

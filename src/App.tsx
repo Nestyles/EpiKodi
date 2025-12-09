@@ -1,17 +1,28 @@
 import { useState } from "react";
 import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
-import { Button, HStack } from "@chakra-ui/react";
+import { Button, HStack, Input, Textarea, Box } from "@chakra-ui/react";
 
 import "./App.css";
 
 function App() {
   const [greetMsg, setGreetMsg] = useState("");
   const [name, setName] = useState("");
+  const [scanPath, setScanPath] = useState<string>("");
+  const [scanResult, setScanResult] = useState<any>(null);
 
   async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
     setGreetMsg(await invoke("greet", { name }));
+  }
+
+  async function scanDirectory() {
+    try {
+      // `scan_directory` will be implemented on the Rust side in a later step.
+      const res = await invoke("scan_directory", { path: scanPath });
+      setScanResult(res);
+    } catch (e) {
+      setScanResult({ error: String(e) });
+    }
   }
 
   return (
@@ -38,14 +49,40 @@ function App() {
           greet();
         }}
       >
-        <input
+        <Input
           id="greet-input"
           onChange={(e) => setName(e.currentTarget.value)}
           placeholder="Enter a name..."
+          size="sm"
+          maxW="240px"
         />
-        <button type="submit">Greet</button>
+        <Button type="submit" colorScheme="teal" size="sm">
+          Greet
+        </Button>
       </form>
       <p>{greetMsg}</p>
+
+      <Box mt={6}>
+        <HStack>
+          <Input
+            placeholder="Path to scan (e.g. C:/Movies)"
+            value={scanPath}
+            onChange={(e) => setScanPath(e.currentTarget.value)}
+            size="sm"
+            maxW="480px"
+          />
+          <Button onClick={scanDirectory} colorScheme="purple" size="sm">
+            Scan Directory
+          </Button>
+        </HStack>
+        <Box mt={3}>
+          <Textarea
+            readOnly
+            value={scanResult ? JSON.stringify(scanResult, null, 2) : "No result yet"}
+            minH="120px"
+          />
+        </Box>
+      </Box>
     </main>
   );
 }

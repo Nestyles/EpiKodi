@@ -6,7 +6,7 @@ fn greet(name: &str) -> String {
 
 use serde::Serialize;
 use walkdir::WalkDir;
-use rusqlite::{params, Connection, named_params};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 use dirs_next;
 use reqwest::blocking::Client;
@@ -151,52 +151,36 @@ fn list_medias(
     let mut count_stmt = conn
         .prepare(
             "SELECT COUNT(*) FROM medias
-             WHERE (:media_type IS NULL OR media_type = :media_type)
-               AND (:query IS NULL OR title LIKE :like_query OR path LIKE :like_query)",
+             WHERE (?1 IS NULL OR media_type = ?1)
+               AND (?2 IS NULL OR title LIKE ?2 OR path LIKE ?2)",
         )
         .map_err(|e| e.to_string())?;
 
     let total: i64 = count_stmt
-        .query_row_named(
-            named_params! {
-                ":media_type": media_type,
-                ":query": query,
-                ":like_query": like_query.as_deref()
-            },
-            |r| r.get(0),
-        )
+        .query_row(params![media_type, like_query.as_deref()], |r| r.get(0))
         .map_err(|e| e.to_string())?;
 
     let mut stmt = conn
         .prepare(
-                        "SELECT path, title, media_type, last_position, synopsis_json, tmdb_id FROM medias
-             WHERE (:media_type IS NULL OR media_type = :media_type)
-               AND (:query IS NULL OR title LIKE :like_query OR path LIKE :like_query)
+            "SELECT path, title, media_type, last_position, synopsis_json, tmdb_id FROM medias
+             WHERE (?1 IS NULL OR media_type = ?1)
+               AND (?2 IS NULL OR title LIKE ?2 OR path LIKE ?2)
              ORDER BY title COLLATE NOCASE ASC
-             LIMIT :limit OFFSET :offset",
+             LIMIT ?3 OFFSET ?4",
         )
         .map_err(|e| e.to_string())?;
 
     let rows = stmt
-        .query_map_named(
-            named_params! {
-                ":media_type": media_type,
-                ":query": query,
-                ":like_query": like_query.as_deref(),
-                ":limit": per_page as i64,
-                ":offset": offset
-            },
-            |row| {
-                Ok(MediaDb {
-                    path: row.get(0)?,
-                    title: row.get(1)?,
-                    media_type: row.get(2)?,
-                    last_position: row.get(3)?,
-                    synopsis_json: row.get(4)?,
-                    tmdb_id: row.get(5)?,
-                })
-            },
-        )
+        .query_map(params![media_type, like_query.as_deref(), per_page as i64, offset], |row| {
+            Ok(MediaDb {
+                path: row.get(0)?,
+                title: row.get(1)?,
+                media_type: row.get(2)?,
+                last_position: row.get(3)?,
+                synopsis_json: row.get(4)?,
+                tmdb_id: row.get(5)?,
+            })
+        })
         .map_err(|e| e.to_string())?;
 
     let mut items: Vec<MediaDb> = Vec::new();
@@ -221,7 +205,7 @@ fn get_media(path: &str) -> Result<Option<MediaDb>, String> {
         .map_err(|e| e.to_string())?;
 
     let res = stmt
-        .query_row([path], |row| {
+        .query_row(params![path], |row| {
             Ok(MediaDb {
                 path: row.get(0)?,
                 title: row.get(1)?,

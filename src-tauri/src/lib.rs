@@ -327,7 +327,10 @@ struct MetadataResult {
 /// Requires environment variable `TMDB_API_KEY` to be set.
 #[tauri::command]
 fn fetch_metadata(title: &str, media_type: &str) -> Result<serde_json::Value, String> {
+    println!("fetch_metadata: start for '{}' ({})", title, media_type);
+
     let api_key = env::var("TMDB_API_KEY").map_err(|_| "TMDB_API_KEY env var is not set".to_string())?;
+    println!("fetch_metadata: api key present, preparing request");
 
     let client = Client::new();
 
@@ -337,16 +340,19 @@ fn fetch_metadata(title: &str, media_type: &str) -> Result<serde_json::Value, St
         _ => return Err("media_type must be 'movie' or 'series'".to_string()),
     };
 
+    println!("fetch_metadata: sending request to {}", endpoint);
     let resp = client
         .get(endpoint)
         .query(&[("api_key", api_key.as_str()), ("query", title)])
         .send()
         .map_err(|e| format!("http error: {}", e))?;
 
+    println!("fetch_metadata: received status {}", resp.status());
     if !resp.status().is_success() {
         return Err(format!("TMDB returned status {}", resp.status()));
     }
 
+    println!("fetch_metadata: parsing JSON response");
     let v: serde_json::Value = resp.json().map_err(|e| format!("parse error: {}", e))?;
     let results = v.get("results").and_then(|r| r.as_array()).ok_or("no results")?;
     let first = results.get(0).ok_or("no results for query")?;
@@ -355,6 +361,8 @@ fn fetch_metadata(title: &str, media_type: &str) -> Result<serde_json::Value, St
         .get("id")
         .and_then(|i| i.as_i64())
         .ok_or("no id in result")?;
+
+    println!("fetch_metadata: selected TMDB id {}", id);
 
     let overview = first.get("overview").and_then(|s| s.as_str()).map(|s| s.to_string());
     let poster_path = first.get("poster_path").and_then(|s| s.as_str()).map(|s| s.to_string());
@@ -373,10 +381,12 @@ fn fetch_metadata(title: &str, media_type: &str) -> Result<serde_json::Value, St
     // download and cache poster locally, if available
     let mut local_poster: Option<String> = None;
     if let Some(ref poster) = poster_path {
+        println!("fetch_metadata: poster available at {}", poster);
         if let Ok(mut posters_dir) = get_db_path() {
             posters_dir.pop(); // epikodi.sqlite -> epikodi dir
             posters_dir.push("posters");
             if let Err(e) = std::fs::create_dir_all(&posters_dir) {
+                eprintln!("fetch_metadata: failed to create posters dir: {}", e);
                 return Err(format!("failed to create posters dir: {}", e));
             }
 
@@ -389,9 +399,12 @@ fn fetch_metadata(title: &str, media_type: &str) -> Result<serde_json::Value, St
             posters_dir.push(&filename);
             let local_path = posters_dir.clone();
 
+            println!("fetch_metadata: local poster path will be {:?}", local_path);
+
             // If file already exists, reuse it
             if !local_path.exists() {
                 if let Some(ref url) = poster_url {
+                    println!("fetch_metadata: downloading poster from {}", url);
                     let bytes = client
                         .get(url)
                         .send()
@@ -399,13 +412,20 @@ fn fetch_metadata(title: &str, media_type: &str) -> Result<serde_json::Value, St
                         .bytes()
                         .map_err(|e| format!("failed to read poster bytes: {}", e))?;
 
+                    println!("fetch_metadata: writing poster to disk");
                     std::fs::write(&local_path, &bytes)
                         .map_err(|e| format!("failed to write poster file: {}", e))?;
                 }
+            } else {
+                println!("fetch_metadata: poster already cached");
             }
 
             local_poster = Some(local_path.to_string_lossy().to_string());
+        } else {
+            eprintln!("fetch_metadata: could not determine posters dir");
         }
+    } else {
+        println!("fetch_metadata: no poster path in TMDB result");
     }
 
     let metadata_json = json!({
@@ -418,14 +438,19 @@ fn fetch_metadata(title: &str, media_type: &str) -> Result<serde_json::Value, St
     });
 
     // update medias table: set synopsis_json and tmdb_id where lower(title) = lower(provided title)
+    println!("fetch_metadata: updating DB synopsis_json and tmdb_id for title '{}'", title);
     if let Ok(conn) = get_connection() {
         let mstr = metadata_json.to_string();
         let _ = conn.execute(
             "UPDATE medias SET synopsis_json = ?1, tmdb_id = ?2 WHERE lower(title) = lower(?3)",
             params![mstr, id, title],
         );
+        println!("fetch_metadata: DB update attempted");
+    } else {
+        eprintln!("fetch_metadata: failed to open DB for update");
     }
 
+    println!("fetch_metadata: finished for '{}'", title);
     Ok(metadata_json)
 }
 

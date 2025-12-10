@@ -4,14 +4,14 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
-use serde::Serialize;
-use walkdir::WalkDir;
-use rusqlite::{params, Connection, OptionalExtension};
-use std::path::Path;
 use dirs_next;
 use reqwest::blocking::Client;
+use rusqlite::{params, Connection, OptionalExtension};
+use serde::Serialize;
 use serde_json::json;
 use std::env;
+use std::path::Path;
+use walkdir::WalkDir;
 
 #[derive(Serialize)]
 struct MediaFile {
@@ -150,7 +150,10 @@ fn tmdb_best_match(title: &str) -> Result<Option<i64>, String> {
         }
 
         let v: serde_json::Value = resp.json().map_err(|e| format!("parse error: {}", e))?;
-        let results = v.get("results").and_then(|r| r.as_array()).ok_or("no results array")?;
+        let results = v
+            .get("results")
+            .and_then(|r| r.as_array())
+            .ok_or("no results array")?;
         if results.is_empty() {
             continue;
         }
@@ -158,8 +161,14 @@ fn tmdb_best_match(title: &str) -> Result<Option<i64>, String> {
         if let Some(first) = results.get(0) {
             let id = first.get("id").and_then(|i| i.as_i64()).ok_or("no id")?;
             // prefer fairly popular / voted results to avoid weak matches
-            let popularity = first.get("popularity").and_then(|p| p.as_f64()).unwrap_or(0.0);
-            let vote_count = first.get("vote_count").and_then(|v| v.as_u64()).unwrap_or(0);
+            let popularity = first
+                .get("popularity")
+                .and_then(|p| p.as_f64())
+                .unwrap_or(0.0);
+            let vote_count = first
+                .get("vote_count")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
 
             if popularity >= 2.0 || vote_count >= 20 {
                 return Ok(Some(id));
@@ -229,16 +238,19 @@ fn list_medias(
         .map_err(|e| e.to_string())?;
 
     let rows = stmt
-        .query_map(params![media_type, like_query.as_deref(), per_page as i64, offset], |row| {
-            Ok(MediaDb {
-                path: row.get(0)?,
-                title: row.get(1)?,
-                media_type: row.get(2)?,
-                last_position: row.get(3)?,
-                synopsis_json: row.get(4)?,
-                tmdb_id: row.get(5)?,
-            })
-        })
+        .query_map(
+            params![media_type, like_query.as_deref(), per_page as i64, offset],
+            |row| {
+                Ok(MediaDb {
+                    path: row.get(0)?,
+                    title: row.get(1)?,
+                    media_type: row.get(2)?,
+                    last_position: row.get(3)?,
+                    synopsis_json: row.get(4)?,
+                    tmdb_id: row.get(5)?,
+                })
+            },
+        )
         .map_err(|e| e.to_string())?;
 
     let mut items: Vec<MediaDb> = Vec::new();
@@ -281,7 +293,11 @@ fn get_media(path: &str) -> Result<Option<MediaDb>, String> {
 
 /// Update media fields (partial updates allowed)
 #[tauri::command]
-fn update_media(path: &str, last_position: Option<i64>, synopsis_json: Option<&str>) -> Result<(), String> {
+fn update_media(
+    path: &str,
+    last_position: Option<i64>,
+    synopsis_json: Option<&str>,
+) -> Result<(), String> {
     let conn = get_connection()?;
 
     if last_position.is_some() {
@@ -329,7 +345,8 @@ struct MetadataResult {
 fn fetch_metadata(title: &str, media_type: &str) -> Result<serde_json::Value, String> {
     println!("fetch_metadata: start for '{}' ({})", title, media_type);
 
-    let api_key = env::var("TMDB_API_KEY").map_err(|_| "TMDB_API_KEY env var is not set".to_string())?;
+    let api_key =
+        env::var("TMDB_API_KEY").map_err(|_| "TMDB_API_KEY env var is not set".to_string())?;
     println!("fetch_metadata: api key present, preparing request");
 
     let client = Client::new();
@@ -354,7 +371,10 @@ fn fetch_metadata(title: &str, media_type: &str) -> Result<serde_json::Value, St
 
     println!("fetch_metadata: parsing JSON response");
     let v: serde_json::Value = resp.json().map_err(|e| format!("parse error: {}", e))?;
-    let results = v.get("results").and_then(|r| r.as_array()).ok_or("no results")?;
+    let results = v
+        .get("results")
+        .and_then(|r| r.as_array())
+        .ok_or("no results")?;
     let first = results.get(0).ok_or("no results for query")?;
 
     let id = first
@@ -364,8 +384,14 @@ fn fetch_metadata(title: &str, media_type: &str) -> Result<serde_json::Value, St
 
     println!("fetch_metadata: selected TMDB id {}", id);
 
-    let overview = first.get("overview").and_then(|s| s.as_str()).map(|s| s.to_string());
-    let poster_path = first.get("poster_path").and_then(|s| s.as_str()).map(|s| s.to_string());
+    let overview = first
+        .get("overview")
+        .and_then(|s| s.as_str())
+        .map(|s| s.to_string());
+    let poster_path = first
+        .get("poster_path")
+        .and_then(|s| s.as_str())
+        .map(|s| s.to_string());
 
     let year = first
         .get("release_date")
@@ -438,7 +464,10 @@ fn fetch_metadata(title: &str, media_type: &str) -> Result<serde_json::Value, St
     });
 
     // update medias table: set synopsis_json and tmdb_id where lower(title) = lower(provided title)
-    println!("fetch_metadata: updating DB synopsis_json and tmdb_id for title '{}'", title);
+    println!(
+        "fetch_metadata: updating DB synopsis_json and tmdb_id for title '{}'",
+        title
+    );
     if let Ok(conn) = get_connection() {
         let mstr = metadata_json.to_string();
         let _ = conn.execute(
@@ -458,6 +487,7 @@ fn fetch_metadata(title: &str, media_type: &str) -> Result<serde_json::Value, St
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             greet,

@@ -3,6 +3,7 @@ import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
 import { Button, HStack, Input, Textarea, Box, SimpleGrid, Image, Text, VStack, Spinner, Badge } from "@chakra-ui/react";
 import { listMedias } from "./lib/tauri-commands";
+import { open } from "@tauri-apps/plugin-dialog";
 
 import "./App.css";
 
@@ -44,45 +45,21 @@ function App() {
 
   return (
     <main className="container">
-      <h1>Welcome to Tauri + React</h1>
+      <Box textAlign="center" my={8}>
+        <Text fontSize="4xl" fontWeight="bold" mb={2}>Epikodi</Text>
+        <Text fontSize="lg" color="gray.500">Scan and manage your media files easily</Text>
+      </Box>
 
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <Input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-          size="sm"
-          maxW="240px"
-        />
-        <Button type="submit" colorScheme="teal" size="sm">
-          Greet
-        </Button>
-      </form>
-      <p>{greetMsg}</p>
-
-      <Box mt={6}>
+      <Box m={6}>
         <HStack>
+          <Button onClick={async () => {
+            const selected = await open({ directory: true });
+            if (selected) setScanPath(selected as string);
+          }} colorScheme="teal" size="sm">
+            Pick Directory
+          </Button>
           <Input
-            placeholder="Path to scan (e.g. C:/Movies)"
+            placeholder="Pick a directory to scan"
             value={scanPath}
             onChange={(e) => setScanPath(e.currentTarget.value)}
             size="sm"

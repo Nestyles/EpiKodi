@@ -1,9 +1,11 @@
 import { useState } from "react";
 import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
-import { Button, HStack, Input, Textarea, Box, SimpleGrid, Image, Text, VStack, Spinner, Badge } from "@chakra-ui/react";
+import { Button, HStack, Input, Textarea, Box, SimpleGrid, Image, Text, VStack, Spinner, Badge, CloseButton } from "@chakra-ui/react";
 import { listMedias } from "./lib/tauri-commands";
 import { open } from "@tauri-apps/plugin-dialog";
+import { warn, debug, trace, info, error } from '@tauri-apps/plugin-log';
+import ReactPlayer from "react-player";
 
 import "./App.css";
 
@@ -13,6 +15,7 @@ function App() {
   const [scanPath, setScanPath] = useState<string>("");
   const [scanResult, setScanResult] = useState<any>(null);
   const [mediaList, setMediaList] = useState<any[]>([]);
+  const [playerPath, setPlayerPath] = useState<string>("");
   const [loading, setLoading] = useState(false);
 
   async function greet() {
@@ -49,6 +52,7 @@ function App() {
         <Text fontSize="4xl" fontWeight="bold" mb={2}>Epikodi</Text>
         <Text fontSize="lg" color="gray.500">Scan and manage your media files easily</Text>
       </Box>
+
 
       <Box m={6}>
         <HStack>
@@ -108,7 +112,24 @@ function App() {
               }
 
               return (
-                <Box key={m.path} borderRadius="md" overflow="hidden" bg="gray.800" p={2}>
+                <Box 
+                  key={m.path} 
+                  borderRadius="md" 
+                  overflow="hidden" 
+                  bg="gray.800" 
+                  p={2}
+                  cursor="pointer"
+                  _hover={{ bg: "gray.700" }}
+                  onClick={() => {
+                    try {
+                      const pathStr = (m.path || '').replace(/\\/g, '/');
+                      setPlayerPath(pathStr);
+                    } catch (e) {
+                      setPlayerPath("");
+                    }
+                    debug(m.path)
+                  }}
+                >
                   <VStack spacing={2} align="stretch">
                     <Box h="160px" display="flex" alignItems="center" justifyContent="center" bg="gray.700">
                       {poster ? (
@@ -128,6 +149,29 @@ function App() {
           </SimpleGrid>
         )}
       </Box>
+      {playerPath ? (
+        <Box
+          as="div"
+          position="fixed"
+          inset={0}
+          bg="rgba(0,0,0,0.6)"
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+          zIndex={1400}
+          role="dialog"
+          aria-modal="true"
+        >
+          <Box position="relative" width={["95%", "80%", "70%"]} maxH="90%" bg="black">
+            <CloseButton position="absolute" top="8px" right="8px" zIndex={1500} onClick={() => setPlayerPath(null)} />
+            <Box as="div" p={0} height="100%">
+              <video style={{ width: '100%', height: '100%' }} controls>
+                <source src={`file:///${playerPath.replace(/\\/g, '/')}`} type="video/mp4" />
+              </video>
+            </Box>
+          </Box>
+        </Box>
+      ) : null}
     </main>
   );
 }

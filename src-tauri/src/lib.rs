@@ -340,11 +340,11 @@ struct MetadataResult {
     poster_path: Option<String>,
 }
 
-/// Fetch metadata from TMDB for a given title and media_type ("movie" or "series").
+/// Fetch metadata from TMDB for a given title and mediaType ("movie" or "series").
 /// Requires environment variable `TMDB_API_KEY` to be set.
 #[tauri::command]
-fn fetch_metadata(title: &str, media_type: &str) -> Result<serde_json::Value, String> {
-    println!("fetch_metadata: start for '{}' ({})", title, media_type);
+fn fetch_metadata(title: &str, mediaType: &str) -> Result<serde_json::Value, String> {
+    println!("fetch_metadata: start for '{}' ({})", title, mediaType);
 
     let api_key =
         env::var("TMDB_API_KEY").map_err(|_| "TMDB_API_KEY env var is not set".to_string())?;
@@ -352,10 +352,10 @@ fn fetch_metadata(title: &str, media_type: &str) -> Result<serde_json::Value, St
 
     let client = Client::new();
 
-    let endpoint = match media_type {
+    let endpoint = match mediaType {
         "movie" => "https://api.themoviedb.org/3/search/movie",
         "series" | "tv" => "https://api.themoviedb.org/3/search/tv",
-        _ => return Err("media_type must be 'movie' or 'series'".to_string()),
+        _ => return Err("mediaType must be 'movie' or 'series'".to_string()),
     };
 
     println!("fetch_metadata: sending request to {}", endpoint);
@@ -487,6 +487,9 @@ fn fetch_metadata(title: &str, media_type: &str) -> Result<serde_json::Value, St
 // J%6ll9DDJrRbqt
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Load .env file for environment variables
+    let _ = dotenv::dotenv();
+
     tauri::Builder::default()
         .plugin(
             tauri_plugin_log::Builder::new()

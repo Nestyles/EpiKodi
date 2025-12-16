@@ -2,10 +2,12 @@ import { useState } from "react";
 import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
 import { Button, HStack, Input, Textarea, Box, SimpleGrid, Image, Text, VStack, Spinner, Badge, CloseButton } from "@chakra-ui/react";
-import { listMedias } from "./lib/tauri-commands";
 import { open } from "@tauri-apps/plugin-dialog";
 import { warn, debug, trace, info, error } from '@tauri-apps/plugin-log';
 import ReactPlayer from "react-player";
+import { listMedias, fetchMetadata } from "./lib/tauri-commands";
+import { toaster } from "./components/ui/toaster";
+import { convertFileSrc } from '@tauri-apps/api/core';
 
 import "./App.css";
 
@@ -43,6 +45,31 @@ function App() {
       console.error(e);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function onFetchMetadata(media: any) {
+    try {
+      console.log(`Fetching metadata for ${media.title}...`);
+      const mediaType = media.media_type === 'video' ? 'movie' : 'series';
+      const result = await fetchMetadata(media.title, mediaType);
+      console.log('Metadata result:', result);
+      toaster.create({
+        title: "Metadata fetched",
+        description: `Updated metadata for ${media.title}`,
+        type: "success",
+        duration: 3000,
+      });
+      // reload library to show updated poster/metadata
+      await loadLibrary();
+    } catch (e) {
+      console.error('fetchMetadata error:', e);
+      toaster.create({
+        title: "Error",
+        description: String(e),
+        type: "error",
+        duration: 5000,
+      });
     }
   }
 
@@ -108,7 +135,7 @@ function App() {
               if (poster && !poster.startsWith('http') && !poster.startsWith('file://')) {
                 // normalize Windows path
                 const pathStr = poster.replace(/\\/g, '/');
-                poster = `file:///${pathStr}`;
+                poster = `${convertFileSrc(pathStr)}`;
               }
 
               return (
@@ -141,6 +168,15 @@ function App() {
                     <Box>
                       <Text fontSize="sm" fontWeight="semibold" noOfLines={2}>{m.title}</Text>
                       <Text fontSize="xs" color="gray.400">{m.media_type} {m.tmdb_id ? <Badge ml={2} colorScheme="green">TMDB</Badge> : null}</Text>
+                      <Button
+                        mt={2}
+                        size="xs"
+                        colorScheme="orange"
+                        variant="outline"
+                        onClick={() => onFetchMetadata(m)}
+                      >
+                        Fetch Metadata
+                      </Button>
                     </Box>
                   </VStack>
                 </Box>

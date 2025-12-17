@@ -3,6 +3,7 @@ import { Box, Button, Image, Text, VStack, HStack, Badge } from "@chakra-ui/reac
 import { convertFileSrc } from '@tauri-apps/api/core';
 import ReactPlayer from "react-player";
 import { useState } from "react";
+import VideoPlayer from "./VideoPlayer";
 
 function Details() {
   const location = useLocation();
@@ -47,7 +48,7 @@ function Details() {
   return (
     <Box p={8} maxW="1200px" mx="auto">
       <Button mb={4} onClick={() => navigate(-1)}>Back</Button>
-      <HStack align="start" spacing={8}>
+      <HStack align="start" gap={8}>
         <Box flexShrink={0}>
           {poster ? (
             <Image src={poster} alt={media.title} maxH="400px" objectFit="cover" borderRadius="md" />
@@ -57,7 +58,7 @@ function Details() {
             </Box>
           )}
         </Box>
-        <VStack align="start" spacing={4} flex={1}>
+        <VStack align="start" gap={4} flex={1}>
           <Text fontSize="3xl" fontWeight="bold">{media.title}</Text>
           <HStack>
             <Badge colorScheme="blue">{media.media_type}</Badge>
@@ -77,9 +78,9 @@ function Details() {
           <Button colorScheme="blue" onClick={() => setPlaying(true)}>Play</Button>
         </VStack>
       </HStack>
-      {playing && (
+      {playing && videoSrc && (
         <Box mt={8}>
-          <ReactPlayer url={videoSrc} controls width="100%" height="400px" />
+          <VideoPlayer src={videoSrc} />
         </Box>
       )}
     </Box>

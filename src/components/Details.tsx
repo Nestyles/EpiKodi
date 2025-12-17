@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from "react-router-dom";
-import { Box, Button, Image, Text, VStack, HStack, Badge, Spinner } from "@chakra-ui/react";
+import { Box, Button, Image, Text, VStack, HStack, Badge } from "@chakra-ui/react";
 import { convertFileSrc } from '@tauri-apps/api/core';
 import ReactPlayer from "react-player";
 import { useState } from "react";

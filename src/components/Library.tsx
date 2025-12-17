@@ -1,28 +1,18 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Button, HStack, Input, Textarea, Box, SimpleGrid, Image, Text, VStack, Spinner, Badge } from "@chakra-ui/react";
-import { open } from "@tauri-apps/plugin-dialog";
-import { debug } from '@tauri-apps/plugin-log';
+import { Button, Box, SimpleGrid, Image, Text, VStack, Spinner, Badge } from "@chakra-ui/react";
 import { listMedias, fetchMetadata } from "../lib/tauri-commands";
 import { toaster } from "../components/ui/toaster";
 import { convertFileSrc } from '@tauri-apps/api/core';
 
 function Library() {
   const navigate = useNavigate();
-  const [scanPath, setScanPath] = useState<string>("");
-  const [scanResult, setScanResult] = useState<any>(null);
   const [mediaList, setMediaList] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
-  async function scanDirectory() {
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      const res = await invoke("scan_directory", { path: scanPath });
-      setScanResult(res);
-    } catch (e) {
-      setScanResult({ error: String(e) });
-    }
-  }
+  useEffect(() => {
+    loadLibrary();
+  }, []);
 
   async function loadLibrary() {
     setLoading(true);
@@ -63,40 +53,12 @@ function Library() {
 
   return (
     <main className="container">
-      <Box textAlign="center" my={8}>
+      <Box textAlign="center" my={8} position="relative">
         <Text fontSize="4xl" fontWeight="bold" mb={2}>Epikodi</Text>
         <Text fontSize="lg" color="gray.500">Scan and manage your media files easily</Text>
-      </Box>
-
-      <Box m={6}>
-        <HStack>
-          <Button onClick={async () => {
-            const selected = await open({ directory: true });
-            if (selected) setScanPath(selected as string);
-          }} colorScheme="teal" size="sm">
-            Pick Directory
-          </Button>
-          <Input
-            placeholder="Pick a directory to scan"
-            value={scanPath}
-            onChange={(e) => setScanPath(e.currentTarget.value)}
-            size="sm"
-            maxW="480px"
-          />
-          <Button onClick={scanDirectory} colorScheme="purple" size="sm">
-            Scan Directory
-          </Button>
-          <Button onClick={loadLibrary} colorScheme="blue" size="sm">
-            Load Library
-          </Button>
-        </HStack>
-        <Box mt={3}>
-          <Textarea
-            readOnly
-            value={scanResult ? JSON.stringify(scanResult, null, 2) : "No result yet"}
-            minH="120px"
-          />
-        </Box>
+        <Button position="absolute" top="0" right="0" onClick={() => navigate('/settings')} colorScheme="gray" size="sm">
+          Settings
+        </Button>
       </Box>
 
       <Box mt={8}>

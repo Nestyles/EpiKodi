@@ -43,7 +43,8 @@ function Details() {
     poster = `${convertFileSrc(pathStr)}`;
   }
 
-  const videoSrc = `file:///${media.path.replace(/\\/g, '/')}`;
+  const videoPathStr = media.path.replace(/\\/g, '/');
+  const videoSrc = `${convertFileSrc(videoPathStr)}`;
 
   return (
     <Box p={8} maxW="1200px" mx="auto">

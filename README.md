@@ -2,7 +2,7 @@
   <p align="center">
    <img width="150" height="150" src="https://hips.hearstapps.com/hmg-prod/images/playful-golden-british-shorthair-cat-royalty-free-image-1701453627.jpg?crop=0.699xw:1.00xh;0.141xw,0" alt="Logo">
   </p>
-	<h1 align="center"><b>Cap</b></h1>
+	<h1 align="center"><b>EpiKodi</b></h1>
 	<p align="center">
 		The Kodi alternative.
     <br />

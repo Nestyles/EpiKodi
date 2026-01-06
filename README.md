@@ -1,7 +1,35 @@
-# Tauri + React + Typescript
+<p align="center">
+  <p align="center">
+   <img width="150" height="150" src="https://hips.hearstapps.com/hmg-prod/images/playful-golden-british-shorthair-cat-royalty-free-image-1701453627.jpg?crop=0.699xw:1.00xh;0.141xw,0" alt="Logo">
+  </p>
+	<h1 align="center"><b>Cap</b></h1>
+	<p align="center">
+		The Kodi alternative.
+    <br />
+    <br />
+    <b>Downloads for </b>
+		<a href="https://daic.re">macOS & Windows</a>
+    <br />
+  </p>
+</p>
+<br/>
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+EpiKodi is the alternative to Kodi. It's a media station that allows you to have details, play and share content automatically.
 
-## Recommended IDE Setup
+# Monorepo App Architecture
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+We use a combination of Rust, React, TypeScript, Tauri, SQLite, ChakraUI throughout this monorepo.
+
+### Apps:
+
+- `desktop`: A [Tauri](https://tauri.app) (Rust) app, using [React](https://react.dev/) on the frontend.
+
+### License:
+Portions of this software are licensed as follows:
+
+- All third party components are licensed under the original license provided by the owner of the applicable component
+- All other content not mentioned above is available under the MIT license as defined in [LICENSE](https://github.com/Nestyles/EpiKodi/blob/master/LICENSE)
+  
+# Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for more information. This guide is a work in progress, and is updated regularly as the app matures.

@@ -522,6 +522,15 @@ mod tests {
         assert_eq!(video2.media_type, "video");
     }
 
+    #[test]
+    fn test_get_db_path() {
+        // This will create a path in the data dir, but for test we can just check it doesn't error
+        let path = get_db_path().unwrap();
+        assert!(path.ends_with("epikodi.sqlite"));
+    }
+
+    }
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Load .env file for environment variables

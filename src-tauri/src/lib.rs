@@ -494,6 +494,34 @@ mod tests {
     fn test_greet() {
         assert_eq!(greet("World"), "Hello, World! You've been greeted from Rust!");
     }
+
+    #[test]
+    fn test_scan_directory() {
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path();
+
+        // Create some test files
+        fs::create_dir_all(temp_path.join("subdir")).unwrap();
+        fs::write(temp_path.join("video.mp4"), b"fake video").unwrap();
+        fs::write(temp_path.join("audio.mp3"), b"fake audio").unwrap();
+        fs::write(temp_path.join("text.txt"), b"not media").unwrap();
+        fs::write(temp_path.join("subdir/video2.mkv"), b"another video").unwrap();
+
+        let result = scan_directory(&temp_path.to_string_lossy()).unwrap();
+
+        // Should find 3 media files
+        assert_eq!(result.len(), 3);
+
+        let video1 = result.iter().find(|m| m.path.contains("video.mp4")).unwrap();
+        assert_eq!(video1.media_type, "video");
+
+        let audio = result.iter().find(|m| m.path.contains("audio.mp3")).unwrap();
+        assert_eq!(audio.media_type, "audio");
+
+        let video2 = result.iter().find(|m| m.path.contains("video2.mkv")).unwrap();
+        assert_eq!(video2.media_type, "video");
+    }
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Load .env file for environment variables

@@ -484,7 +484,16 @@ fn fetch_metadata(title: &str, mediaType: &str) -> Result<serde_json::Value, Str
     Ok(metadata_json)
 }
 
-// J%6ll9DDJrRbqt
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_greet() {
+        assert_eq!(greet("World"), "Hello, World! You've been greeted from Rust!");
+    }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Load .env file for environment variables

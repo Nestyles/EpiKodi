@@ -12,7 +12,7 @@ use serde_json::json;
 use std::env;
 use std::path::Path;
 use walkdir::WalkDir;
-use tauri_plugin_log::{Target, TargetKind};
+use tauri_plugin_log::TargetKind;
 
 #[derive(Serialize)]
 struct MediaFile {
@@ -71,6 +71,10 @@ fn persist_results(results: &[MediaFile]) -> Result<(), String> {
     let db_path = get_db_path()?;
     println!("Using database at {:?}", db_path);
     let mut conn = Connection::open(db_path).map_err(|e| e.to_string())?;
+    persist_results_internal(&mut conn, results)
+}
+
+fn persist_results_internal(conn: &mut Connection, results: &[MediaFile]) -> Result<(), String> {
 
     conn.execute(
         "CREATE TABLE IF NOT EXISTS medias (
@@ -200,8 +204,9 @@ struct ListResponse {
 }
 
 /// List medias with pagination and optional filters (media_type, query)
-#[tauri::command]
-fn list_medias(
+/// Internal function for testing
+fn list_medias_internal(
+    conn: &Connection,
     page: Option<u32>,
     per_page: Option<u32>,
     media_type: Option<&str>,
@@ -210,8 +215,6 @@ fn list_medias(
     let page = page.unwrap_or(1).max(1);
     let per_page = per_page.unwrap_or(50).clamp(1, 500);
     let offset = ((page - 1) as i64) * (per_page as i64);
-
-    let conn = get_connection()?;
 
     let like_query = query.map(|q| format!("%{}%", q));
 
@@ -267,10 +270,21 @@ fn list_medias(
     })
 }
 
-/// Get a single media by path
+/// List medias with pagination and optional filters (media_type, query)
 #[tauri::command]
-fn get_media(path: &str) -> Result<Option<MediaDb>, String> {
+fn list_medias(
+    page: Option<u32>,
+    per_page: Option<u32>,
+    media_type: Option<&str>,
+    query: Option<&str>,
+) -> Result<ListResponse, String> {
     let conn = get_connection()?;
+    list_medias_internal(&conn, page, per_page, media_type, query)
+}
+
+/// Get a single media by path
+/// Internal function for testing
+fn get_media_internal(conn: &Connection, path: &str) -> Result<Option<MediaDb>, String> {
     let mut stmt = conn
         .prepare("SELECT path, title, media_type, last_position, synopsis_json, tmdb_id FROM medias WHERE path = ?1 LIMIT 1")
         .map_err(|e| e.to_string())?;
@@ -292,15 +306,21 @@ fn get_media(path: &str) -> Result<Option<MediaDb>, String> {
     Ok(res)
 }
 
-/// Update media fields (partial updates allowed)
+/// Get a single media by path
 #[tauri::command]
-fn update_media(
+fn get_media(path: &str) -> Result<Option<MediaDb>, String> {
+    let conn = get_connection()?;
+    get_media_internal(&conn, path)
+}
+
+/// Update media fields (partial updates allowed)
+/// Internal function for testing
+fn update_media_internal(
+    conn: &Connection,
     path: &str,
     last_position: Option<i64>,
     synopsis_json: Option<&str>,
 ) -> Result<(), String> {
-    let conn = get_connection()?;
-
     if last_position.is_some() {
         conn.execute(
             "UPDATE medias SET last_position = ?1 WHERE path = ?2",
@@ -320,14 +340,31 @@ fn update_media(
     Ok(())
 }
 
-/// Delete a media by path
+/// Update media fields (partial updates allowed)
 #[tauri::command]
-fn delete_media(path: &str) -> Result<bool, String> {
+fn update_media(
+    path: &str,
+    last_position: Option<i64>,
+    synopsis_json: Option<&str>,
+) -> Result<(), String> {
     let conn = get_connection()?;
+    update_media_internal(&conn, path, last_position, synopsis_json)
+}
+
+/// Delete a media by path
+/// Internal function for testing
+fn delete_media_internal(conn: &Connection, path: &str) -> Result<bool, String> {
     let affected = conn
         .execute("DELETE FROM medias WHERE path = ?1", params![path])
         .map_err(|e| e.to_string())?;
     Ok(affected > 0)
+}
+
+/// Delete a media by path
+#[tauri::command]
+fn delete_media(path: &str) -> Result<bool, String> {
+    let conn = get_connection()?;
+    delete_media_internal(&conn, path)
 }
 
 #[derive(Serialize)]
@@ -529,7 +566,156 @@ mod tests {
         assert!(path.ends_with("epikodi.sqlite"));
     }
 
+    #[test]
+    fn test_tmdb_best_match_no_key() {
+        // Without API key, should return None
+        std::env::remove_var("TMDB_API_KEY");
+        let result = tmdb_best_match("test").unwrap();
+        assert_eq!(result, None);
     }
+
+    #[test]
+    fn test_persist_results() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        let results = vec![
+            MediaFile { path: "/path/video.mp4".to_string(), media_type: "video".to_string() },
+            MediaFile { path: "/path/audio.mp3".to_string(), media_type: "audio".to_string() },
+        ];
+
+        persist_results_internal(&mut conn, &results).unwrap();
+
+        // Check if data was inserted
+        let result = list_medias_internal(&conn, None, None, None, None).unwrap();
+        assert_eq!(result.items.len(), 2);
+    }
+
+    // For list_medias, get_media, etc., we can create a temp DB and insert data manually.
+
+    #[test]
+    fn test_list_medias() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE medias (
+                path TEXT PRIMARY KEY,
+                title TEXT,
+                media_type TEXT,
+                last_position INTEGER DEFAULT 0,
+                synopsis_json TEXT,
+                tmdb_id INTEGER
+            )",
+            [],
+        ).unwrap();
+
+        // Insert test data
+        conn.execute(
+            "INSERT INTO medias (path, title, media_type) VALUES (?1, ?2, ?3)",
+            params!["/path/video.mp4", "Video", "video"],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO medias (path, title, media_type) VALUES (?1, ?2, ?3)",
+            params!["/path/audio.mp3", "Audio", "audio"],
+        ).unwrap();
+
+        let result = list_medias_internal(&conn, None, None, None, None).unwrap();
+        assert_eq!(result.items.len(), 2);
+        assert_eq!(result.total, 2);
+
+        // Test filtering by media_type
+        let result = list_medias_internal(&conn, None, None, Some("video"), None).unwrap();
+        assert_eq!(result.items.len(), 1);
+        assert_eq!(result.items[0].title, "Video");
+    }
+
+    // Similarly for other DB functions.
+
+    // For fetch_metadata, we can use mockito to mock the HTTP responses.
+
+    #[test]
+    fn test_get_media() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE medias (
+                path TEXT PRIMARY KEY,
+                title TEXT,
+                media_type TEXT,
+                last_position INTEGER DEFAULT 0,
+                synopsis_json TEXT,
+                tmdb_id INTEGER
+            )",
+            [],
+        ).unwrap();
+
+        conn.execute(
+            "INSERT INTO medias (path, title, media_type) VALUES (?1, ?2, ?3)",
+            params!["/path/video.mp4", "Video", "video"],
+        ).unwrap();
+
+        let result = get_media_internal(&conn, "/path/video.mp4").unwrap();
+        assert!(result.is_some());
+        let media = result.unwrap();
+        assert_eq!(media.title, "Video");
+
+        let result = get_media_internal(&conn, "/path/nonexistent.mp4").unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_update_media() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE medias (
+                path TEXT PRIMARY KEY,
+                title TEXT,
+                media_type TEXT,
+                last_position INTEGER DEFAULT 0,
+                synopsis_json TEXT,
+                tmdb_id INTEGER
+            )",
+            [],
+        ).unwrap();
+
+        conn.execute(
+            "INSERT INTO medias (path, title, media_type) VALUES (?1, ?2, ?3)",
+            params!["/path/video.mp4", "Video", "video"],
+        ).unwrap();
+
+        update_media_internal(&conn, "/path/video.mp4", Some(100), Some("{\"test\": \"data\"}")).unwrap();
+
+        let result = get_media_internal(&conn, "/path/video.mp4").unwrap().unwrap();
+        assert_eq!(result.last_position, 100);
+        assert_eq!(result.synopsis_json, Some("{\"test\": \"data\"}".to_string()));
+    }
+
+    #[test]
+    fn test_delete_media() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE medias (
+                path TEXT PRIMARY KEY,
+                title TEXT,
+                media_type TEXT,
+                last_position INTEGER DEFAULT 0,
+                synopsis_json TEXT,
+                tmdb_id INTEGER
+            )",
+            [],
+        ).unwrap();
+
+        conn.execute(
+            "INSERT INTO medias (path, title, media_type) VALUES (?1, ?2, ?3)",
+            params!["/path/video.mp4", "Video", "video"],
+        ).unwrap();
+
+        let deleted = delete_media_internal(&conn, "/path/video.mp4").unwrap();
+        assert!(deleted);
+
+        let result = get_media_internal(&conn, "/path/video.mp4").unwrap();
+        assert!(result.is_none());
+
+        let deleted = delete_media_internal(&conn, "/path/nonexistent.mp4").unwrap();
+        assert!(!deleted);
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

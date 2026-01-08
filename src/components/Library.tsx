@@ -1,23 +1,28 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button, Box, SimpleGrid, Image, Text, VStack, Spinner, Badge } from "@chakra-ui/react";
 import { listMedias, fetchMetadata } from "../lib/tauri-commands";
 import { toaster } from "../components/ui/toaster";
 import { convertFileSrc } from '@tauri-apps/api/core';
+import Navbar from "./Navbar";
 
 function Library() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [mediaList, setMediaList] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
+  const category = searchParams.get("category") || "all";
+
   useEffect(() => {
     loadLibrary();
-  }, []);
+  }, [category]);
 
   async function loadLibrary() {
     setLoading(true);
     try {
-      const res: any = await listMedias({ page: 1, per_page: 200 });
+      const mediaType = category === "all" ? null : category;
+      const res: any = await listMedias({ page: 1, per_page: 200, media_type: mediaType });
       const items = res.items || [];
       setMediaList(items as any[]);
     } catch (e) {
@@ -62,12 +67,13 @@ function Library() {
       </Box>
 
       <Box mt={8}>
-        <Text fontSize="lg" fontWeight="bold" mb={3}>Library</Text>
+        <Text fontSize="lg" fontWeight="bold" mb={3}>Library - {category.charAt(0).toUpperCase() + category.slice(1)}</Text>
+        <Navbar />
         {loading ? (
           <Spinner />
         ) : (
           <SimpleGrid columns={[2, 3, 5]} spacing={4}>
-            {mediaList.map((m) => {
+            {mediaList.filter(el => el.media_type === category || category === "all").map((m) => {
               let poster: string | null = null;
               try {
                 if (m.synopsis_json) {

@@ -35,8 +35,10 @@ function Library() {
   async function onFetchMetadata(media: any) {
     try {
       console.log(`Fetching metadata for ${media.title}...`);
-      const mediaType = media.media_type === 'video' ? 'movie' : 'series';
-      const result = await fetchMetadata(media.title, mediaType);
+      if (media.media_type !== 'video') {
+        return;
+      }
+      const result = await fetchMetadata(media.title);
       console.log('Metadata result:', result);
       toaster.create({
         title: "Metadata fetched",

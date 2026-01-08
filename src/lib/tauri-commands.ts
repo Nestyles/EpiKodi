@@ -4,8 +4,8 @@ export async function scanDirectory(path: string) {
   return invoke("scan_directory", { path });
 }
 
-export async function fetchMetadata(title: string, mediaType: "movie" | "series") {
-  return invoke("fetch_metadata", { title, mediaType });
+export async function fetchMetadata(title: string) {
+  return invoke("fetch_metadata", { title });
 }
 
 export async function listMedias(options?: {

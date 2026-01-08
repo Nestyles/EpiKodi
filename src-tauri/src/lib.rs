@@ -1,9 +1,3 @@
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 use dirs_next;
 use reqwest::blocking::Client;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -19,6 +13,13 @@ struct MediaFile {
     path: String,
     media_type: String,
 }
+
+// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+#[tauri::command]
+fn greet(name: &str) -> String {
+    format!("Hello, {}! You've been greeted from Rust!", name)
+}
+
 
 /// Scan a directory recursively and return media file paths and types.
 #[tauri::command]
@@ -36,6 +37,8 @@ fn scan_directory(path: &str) -> Result<Vec<MediaFile>, String> {
                         "mp4" | "mkv" | "mov" | "avi" | "m4v" | "webm" | "flv" => Some("video"),
                         // audio
                         "mp3" | "flac" | "wav" | "m4a" | "aac" | "ogg" => Some("audio"),
+                        // images
+                        "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" => Some("image"),
                         _ => None,
                     };
 
@@ -377,11 +380,12 @@ struct MetadataResult {
     poster_path: Option<String>,
 }
 
-/// Fetch metadata from TMDB for a given title and mediaType ("movie" or "series").
+/// Fetch metadata from TMDB for a given title.
+/// Tries movie first, then TV series.
 /// Requires environment variable `TMDB_API_KEY` to be set.
 #[tauri::command]
-fn fetch_metadata(title: &str, mediaType: &str) -> Result<serde_json::Value, String> {
-    println!("fetch_metadata: start for '{}' ({})", title, mediaType);
+fn fetch_metadata(title: &str) -> Result<serde_json::Value, String> {
+    println!("fetch_metadata: start for '{}'", title);
 
     let api_key =
         env::var("TMDB_API_KEY").map_err(|_| "TMDB_API_KEY env var is not set".to_string())?;
@@ -389,36 +393,65 @@ fn fetch_metadata(title: &str, mediaType: &str) -> Result<serde_json::Value, Str
 
     let client = Client::new();
 
-    let endpoint = match mediaType {
-        "movie" => "https://api.themoviedb.org/3/search/movie",
-        "series" | "tv" => "https://api.themoviedb.org/3/search/tv",
-        _ => return Err("mediaType must be 'movie' or 'series'".to_string()),
-    };
+    // Try movie first, then tv
+    let endpoints = [
+        ("movie", "https://api.themoviedb.org/3/search/movie"),
+        ("tv", "https://api.themoviedb.org/3/search/tv"),
+    ];
 
-    println!("fetch_metadata: sending request to {}", endpoint);
-    let resp = client
-        .get(endpoint)
-        .query(&[("api_key", api_key.as_str()), ("query", title)])
-        .send()
-        .map_err(|e| format!("http error: {}", e))?;
+    let mut best_result: Option<serde_json::Value> = None;
+    let mut best_id: Option<i64> = None;
 
-    println!("fetch_metadata: received status {}", resp.status());
-    if !resp.status().is_success() {
-        return Err(format!("TMDB returned status {}", resp.status()));
+    for (media_type, endpoint) in endpoints.iter() {
+        println!("fetch_metadata: trying {} endpoint", media_type);
+        let resp = client
+            .get(*endpoint)
+            .query(&[("api_key", api_key.as_str()), ("query", title)])
+            .send()
+            .map_err(|e| format!("http error: {}", e))?;
+
+        println!("fetch_metadata: received status {}", resp.status());
+        if !resp.status().is_success() {
+            continue;
+        }
+
+        println!("fetch_metadata: parsing JSON response");
+        let v: serde_json::Value = resp.json().map_err(|e| format!("parse error: {}", e))?;
+        let results = v
+            .get("results")
+            .and_then(|r| r.as_array())
+            .ok_or("no results")?;
+        if results.is_empty() {
+            continue;
+        }
+
+        let first = results.get(0).ok_or("no results for query")?;
+
+        let id = first
+            .get("id")
+            .and_then(|i| i.as_i64())
+            .ok_or("no id in result")?;
+
+        // Check popularity/vote_count to prefer better matches
+        let popularity = first
+            .get("popularity")
+            .and_then(|p| p.as_f64())
+            .unwrap_or(0.0);
+        let vote_count = first
+            .get("vote_count")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+
+        if popularity >= 2.0 || vote_count >= 20 {
+            println!("fetch_metadata: found good match with id {}", id);
+            best_result = Some(first.clone());
+            best_id = Some(id);
+            break; // prefer movie over tv if both match
+        }
     }
 
-    println!("fetch_metadata: parsing JSON response");
-    let v: serde_json::Value = resp.json().map_err(|e| format!("parse error: {}", e))?;
-    let results = v
-        .get("results")
-        .and_then(|r| r.as_array())
-        .ok_or("no results")?;
-    let first = results.get(0).ok_or("no results for query")?;
-
-    let id = first
-        .get("id")
-        .and_then(|i| i.as_i64())
-        .ok_or("no id in result")?;
+    let first = best_result.ok_or("no suitable results found")?;
+    let id = best_id.unwrap();
 
     println!("fetch_metadata: selected TMDB id {}", id);
 

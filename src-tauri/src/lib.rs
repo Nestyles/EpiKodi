@@ -1,9 +1,3 @@
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 use dirs_next;
 use reqwest::blocking::Client;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -19,6 +13,13 @@ struct MediaFile {
     path: String,
     media_type: String,
 }
+
+// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+#[tauri::command]
+fn greet(name: &str) -> String {
+    format!("Hello, {}! You've been greeted from Rust!", name)
+}
+
 
 /// Scan a directory recursively and return media file paths and types.
 #[tauri::command]
@@ -36,6 +37,8 @@ fn scan_directory(path: &str) -> Result<Vec<MediaFile>, String> {
                         "mp4" | "mkv" | "mov" | "avi" | "m4v" | "webm" | "flv" => Some("video"),
                         // audio
                         "mp3" | "flac" | "wav" | "m4a" | "aac" | "ogg" => Some("audio"),
+                        // images
+                        "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" => Some("image"),
                         _ => None,
                     };
 

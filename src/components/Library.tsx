@@ -88,7 +88,7 @@ function Library() {
           <Spinner />
         ) : (
           <SimpleGrid columns={[2, 3, 5]} gap={4}>
-            {mediaList.filter(el => el.media_type === category || category === "all").map((m) => {
+            {mediaList.map((m) => {
               let poster: string | null = null;
               try {
                 if (m.synopsis_json) {

@@ -212,14 +212,14 @@ fn list_medias_internal(
     conn: &Connection,
     page: Option<u32>,
     per_page: Option<u32>,
-    media_type: Option<&str>,
-    query: Option<&str>,
+    media_type: Option<String>,
+    query: Option<String>,
 ) -> Result<ListResponse, String> {
     let page = page.unwrap_or(1).max(1);
     let per_page = per_page.unwrap_or(50).clamp(1, 500);
     let offset = ((page - 1) as i64) * (per_page as i64);
 
-    let like_query = query.map(|q| format!("%{}%", q));
+    let like_query = query.as_ref().map(|q| format!("%{}%", q));
 
     // Count total
     let mut count_stmt = conn
@@ -231,7 +231,7 @@ fn list_medias_internal(
         .map_err(|e| e.to_string())?;
 
     let total: i64 = count_stmt
-        .query_row(params![media_type, like_query.as_deref()], |r| r.get(0))
+        .query_row(params![media_type.as_deref(), query.as_deref()], |r| r.get(0))
         .map_err(|e| e.to_string())?;
 
     let mut stmt = conn
@@ -246,7 +246,7 @@ fn list_medias_internal(
 
     let rows = stmt
         .query_map(
-            params![media_type, like_query.as_deref(), per_page as i64, offset],
+            params![media_type.as_deref(), like_query.as_deref(), per_page as i64, offset],
             |row| {
                 Ok(MediaDb {
                     path: row.get(0)?,
@@ -264,7 +264,6 @@ fn list_medias_internal(
     for r in rows {
         items.push(r.map_err(|e| e.to_string())?);
     }
-
     Ok(ListResponse {
         items,
         total,
@@ -279,10 +278,10 @@ fn list_medias(
     page: Option<u32>,
     per_page: Option<u32>,
     media_type: Option<&str>,
-    query: Option<&str>,
+    query: Option<String>,
 ) -> Result<ListResponse, String> {
     let conn = get_connection()?;
-    list_medias_internal(&conn, page, per_page, media_type, query)
+    list_medias_internal(&conn, page, per_page, media_type.map(|s| s.to_string()), query)
 }
 
 /// Get a single media by path
@@ -654,7 +653,7 @@ mod tests {
         assert_eq!(result.total, 2);
 
         // Test filtering by media_type
-        let result = list_medias_internal(&conn, None, None, Some("video"), None).unwrap();
+        let result = list_medias_internal(&conn, None, None, Some("video".to_string()), None).unwrap();
         assert_eq!(result.items.len(), 1);
         assert_eq!(result.items[0].title, "Video");
     }

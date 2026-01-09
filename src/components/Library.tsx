@@ -11,26 +11,39 @@ function Library() {
   const [searchParams] = useSearchParams();
   const [mediaList, setMediaList] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const perPage = 20;
 
   const category = searchParams.get("category") || "all";
 
   useEffect(() => {
-    loadLibrary();
+    setCurrentPage(1);
+    loadLibrary(1);
   }, [category]);
 
-  async function loadLibrary() {
+  async function loadLibrary(page = 1) {
     setLoading(true);
     try {
       const mediaType = category === "all" ? null : category;
-      const res: any = await listMedias({ page: 1, per_page: 200, media_type: mediaType });
+      const res: any = await listMedias({ page, per_page: perPage, media_type: mediaType });
       const items = res.items || [];
       setMediaList(items as any[]);
+      const total = res.total || 0;
+      setTotalPages(Math.ceil(total / perPage));
+      setCurrentPage(page);
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
   }
+
+  const handlePageChange = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      loadLibrary(page);
+    }
+  };
 
   async function onFetchMetadata(media: any) {
     try {
@@ -74,7 +87,7 @@ function Library() {
         {loading ? (
           <Spinner />
         ) : (
-          <SimpleGrid columns={[2, 3, 5]} spacing={4}>
+          <SimpleGrid columns={[2, 3, 5]} gap={4}>
             {mediaList.filter(el => el.media_type === category || category === "all").map((m) => {
               let poster: string | null = null;
               try {
@@ -105,7 +118,7 @@ function Library() {
                     navigate('/details', { state: { media: m } });
                   }}
                 >
-                  <VStack spacing={2} align="stretch">
+                  <VStack gap={2} align="stretch">
                     <Box h="160px" display="flex" alignItems="center" justifyContent="center" bg="gray.700">
                       {poster ? (
                         <Image src={poster} alt={m.title} objectFit="cover" maxH="160px" />
@@ -114,7 +127,7 @@ function Library() {
                       )}
                     </Box>
                     <Box>
-                      <Text fontSize="sm" fontWeight="semibold" noOfLines={2}>{m.title}</Text>
+                      <Text fontSize="sm" fontWeight="semibold" lineClamp={2}>{m.title}</Text>
                       <Text fontSize="xs" color="gray.400">{m.media_type} {m.tmdb_id ? <Badge ml={2} colorScheme="green">TMDB</Badge> : null}</Text>
                       <Button
                         mt={2}
@@ -135,6 +148,25 @@ function Library() {
             })}
           </SimpleGrid>
         )}
+        <Box mt={8} display="flex" justifyContent="center" alignItems="center">
+          <Button
+            onClick={() => handlePageChange(currentPage - 1)}
+            disabled={currentPage === 1 || loading}
+            mr={4}
+          >
+            Previous
+          </Button>
+          <Text>
+            Page {currentPage} of {totalPages}
+          </Text>
+          <Button
+            onClick={() => handlePageChange(currentPage + 1)}
+            disabled={currentPage === totalPages || loading}
+            ml={4}
+          >
+            Next
+          </Button>
+        </Box>
       </Box>
     </main>
   );

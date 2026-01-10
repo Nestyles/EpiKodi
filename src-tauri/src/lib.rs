@@ -219,14 +219,14 @@ fn list_medias_internal(
     let per_page = per_page.unwrap_or(50).clamp(1, 500);
     let offset = ((page - 1) as i64) * (per_page as i64);
 
-    let like_query = query.as_ref().map(|q| format!("%{}%", q));
+    let like_query = query.as_ref().map(|q| format!("%{}%", q.to_lowercase()));
 
     // Count total
     let mut count_stmt = conn
         .prepare(
             "SELECT COUNT(*) FROM medias
              WHERE (?1 IS NULL OR media_type = ?1)
-               AND (?2 IS NULL OR title LIKE ?2 OR path LIKE ?2)",
+               AND (?2 IS NULL OR LOWER(title) LIKE ?2)",
         )
         .map_err(|e| e.to_string())?;
 
@@ -238,7 +238,7 @@ fn list_medias_internal(
         .prepare(
             "SELECT path, title, media_type, last_position, synopsis_json, tmdb_id FROM medias
              WHERE (?1 IS NULL OR media_type = ?1)
-               AND (?2 IS NULL OR title LIKE ?2 OR path LIKE ?2)
+               AND (?2 IS NULL OR LOWER(title) LIKE ?2)
              ORDER BY title COLLATE NOCASE ASC
              LIMIT ?3 OFFSET ?4",
         )

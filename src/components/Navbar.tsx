@@ -28,11 +28,11 @@ function Navbar() {
   };
 
   return (
-    <Box bg="gray.900" p={4} borderBottom="1px" borderColor="gray.700">
-      <TabsRoot value={currentCategory} onValueChange={handleTabChange} variant="enclosed" colorScheme="blue">
-        <TabsList>
+    <Box bg="gray.900" p={4} borderRight="1px" borderColor="gray.700" h="100%">
+      <TabsRoot value={currentCategory} onValueChange={handleTabChange} variant="enclosed" colorScheme="blue" orientation="vertical">
+        <TabsList flexDirection="column" alignItems="stretch">
           {categories.map((cat) => (
-            <TabsTrigger key={cat.key} value={cat.key}>
+            <TabsTrigger key={cat.key} value={cat.key} justifyContent="flex-start">
               <HStack>
                 <cat.icon />
                 <Text>{cat.label}</Text>

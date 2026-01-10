@@ -13,9 +13,10 @@ export async function listMedias(options?: {
   per_page?: number;
   media_type?: string | null;
   query?: string | null;
+  has_metadata?: boolean | null;
 }) {
-  const { page = 1, per_page = 50, media_type, query = null } = options || {};
-  return invoke("list_medias", { page, perPage: per_page, mediaType: media_type, query });
+  const { page = 1, per_page = 50, media_type, query = null, has_metadata = null } = options || {};
+  return invoke("list_medias", { page, perPage: per_page, mediaType: media_type, query, hasMetadata: has_metadata });
 }
 
 export async function getMedia(path: string) {

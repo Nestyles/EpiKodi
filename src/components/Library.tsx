@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button, Box, SimpleGrid, Image, Text, VStack, Spinner, Badge, Input, HStack, Flex } from "@chakra-ui/react";
+import { Checkbox } from "@chakra-ui/react";
 import { listMedias, fetchMetadata } from "../lib/tauri-commands";
 import { toaster } from "../components/ui/toaster";
 import { convertFileSrc } from '@tauri-apps/api/core';
@@ -14,6 +15,7 @@ function Library() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
+  const [hasMetadataFilter, setHasMetadataFilter] = useState(false);
   const perPage = 20;
 
   const category = searchParams.get("category") || "all";
@@ -21,14 +23,15 @@ function Library() {
   useEffect(() => {
     setCurrentPage(1);
     loadLibrary(1);
-  }, [category, searchQuery]);
+  }, [category, searchQuery, hasMetadataFilter]);
 
   async function loadLibrary(page = 1) {
     setLoading(true);
     try {
       const mediaType = category === "all" ? null : category;
       const query = searchQuery.trim() || null;
-      const res: any = await listMedias({ page, per_page: perPage, media_type: mediaType, query });
+      const has_metadata = hasMetadataFilter ? true : null;
+      const res: any = await listMedias({ page, per_page: perPage, media_type: mediaType, query, has_metadata });
       const items = res.items || [];
       setMediaList(items as any[]);
       const total = res.total || 0;
@@ -90,13 +93,25 @@ function Library() {
         <Box>
           <Flex direction={{ base: "column", md: "row" }} mb={3} justify={{ md: "space-between" }} align={{ base: "stretch", md: "center" }} gap={2}>
             <Text fontSize="lg" fontWeight="bold">Library - {category.charAt(0).toUpperCase() + category.slice(1)}</Text>
-            <Input
-              placeholder="Search by title..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              maxW={{ base: "full", md: "300px" }}
-              size="sm"
-            />
+            <VStack gap={2} align="stretch" flexShrink={0}>
+              <Input
+                placeholder="Search by title..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                size="sm"
+              />
+              <Checkbox.Root
+                checked={hasMetadataFilter}
+                onCheckedChange={(e) => setHasMetadataFilter(e.checked)}
+                size="sm"
+              >
+                <Checkbox.HiddenInput />
+                <Checkbox.Control>
+                  <Checkbox.Indicator />
+                </Checkbox.Control>
+                <Checkbox.Label>Recognized</Checkbox.Label>
+              </Checkbox.Root>
+            </VStack>
           </Flex>
           {loading ? (
             <Spinner />

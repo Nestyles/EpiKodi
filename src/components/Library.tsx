@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Button, Box, SimpleGrid, Image, Text, VStack, Spinner, Badge } from "@chakra-ui/react";
+import { Button, Box, SimpleGrid, Image, Text, VStack, Spinner, Badge, Input, HStack, Flex } from "@chakra-ui/react";
 import { listMedias, fetchMetadata } from "../lib/tauri-commands";
 import { toaster } from "../components/ui/toaster";
 import { convertFileSrc } from '@tauri-apps/api/core';
@@ -13,6 +13,7 @@ function Library() {
   const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [searchQuery, setSearchQuery] = useState("");
   const perPage = 20;
 
   const category = searchParams.get("category") || "all";
@@ -20,13 +21,14 @@ function Library() {
   useEffect(() => {
     setCurrentPage(1);
     loadLibrary(1);
-  }, [category]);
+  }, [category, searchQuery]);
 
   async function loadLibrary(page = 1) {
     setLoading(true);
     try {
       const mediaType = category === "all" ? null : category;
-      const res: any = await listMedias({ page, per_page: perPage, media_type: mediaType });
+      const query = searchQuery.trim() || null;
+      const res: any = await listMedias({ page, per_page: perPage, media_type: mediaType, query });
       const items = res.items || [];
       setMediaList(items as any[]);
       const total = res.total || 0;
@@ -86,7 +88,16 @@ function Library() {
         </Box>
 
         <Box>
-          <Text fontSize="lg" fontWeight="bold" mb={3}>Library - {category.charAt(0).toUpperCase() + category.slice(1)}</Text>
+          <Flex direction={{ base: "column", md: "row" }} mb={3} justify={{ md: "space-between" }} align={{ base: "stretch", md: "center" }} gap={2}>
+            <Text fontSize="lg" fontWeight="bold">Library - {category.charAt(0).toUpperCase() + category.slice(1)}</Text>
+            <Input
+              placeholder="Search by title..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              maxW={{ base: "full", md: "300px" }}
+              size="sm"
+            />
+          </Flex>
           {loading ? (
             <Spinner />
           ) : (

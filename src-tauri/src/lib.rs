@@ -6,7 +6,6 @@ use serde_json::json;
 use std::env;
 use std::path::Path;
 use walkdir::WalkDir;
-use tauri_plugin_log::TargetKind;
 
 #[derive(Serialize)]
 struct MediaFile {
@@ -214,6 +213,7 @@ fn list_medias_internal(
     per_page: Option<u32>,
     media_type: Option<String>,
     query: Option<String>,
+    has_metadata: Option<bool>,
 ) -> Result<ListResponse, String> {
     let page = page.unwrap_or(1).max(1);
     let per_page = per_page.unwrap_or(50).clamp(1, 500);
@@ -226,12 +226,13 @@ fn list_medias_internal(
         .prepare(
             "SELECT COUNT(*) FROM medias
              WHERE (?1 IS NULL OR media_type = ?1)
-               AND (?2 IS NULL OR LOWER(title) LIKE ?2)",
+               AND (?2 IS NULL OR LOWER(title) LIKE ?2)
+               AND (?3 IS NULL OR (?3 = 1 AND synopsis_json IS NOT NULL) OR (?3 = 0 AND synopsis_json IS NULL))",
         )
         .map_err(|e| e.to_string())?;
 
     let total: i64 = count_stmt
-        .query_row(params![media_type.as_deref(), query.as_deref()], |r| r.get(0))
+        .query_row(params![media_type.as_deref(), like_query.as_deref(), has_metadata.map(|b| b as i32)], |r| r.get(0))
         .map_err(|e| e.to_string())?;
 
     let mut stmt = conn
@@ -239,6 +240,7 @@ fn list_medias_internal(
             "SELECT path, title, media_type, last_position, synopsis_json, tmdb_id FROM medias
              WHERE (?1 IS NULL OR media_type = ?1)
                AND (?2 IS NULL OR LOWER(title) LIKE ?2)
+               AND (?5 IS NULL OR (?5 = 1 AND synopsis_json IS NOT NULL) OR (?5 = 0 AND synopsis_json IS NULL))
              ORDER BY title COLLATE NOCASE ASC
              LIMIT ?3 OFFSET ?4",
         )
@@ -246,7 +248,7 @@ fn list_medias_internal(
 
     let rows = stmt
         .query_map(
-            params![media_type.as_deref(), like_query.as_deref(), per_page as i64, offset],
+            params![media_type.as_deref(), like_query.as_deref(), per_page as i64, offset, has_metadata.map(|b| b as i32)],
             |row| {
                 Ok(MediaDb {
                     path: row.get(0)?,
@@ -272,16 +274,17 @@ fn list_medias_internal(
     })
 }
 
-/// List medias with pagination and optional filters (media_type, query)
+/// List medias with pagination and optional filters (media_type, query, has_metadata)
 #[tauri::command]
 fn list_medias(
     page: Option<u32>,
     per_page: Option<u32>,
     media_type: Option<&str>,
     query: Option<String>,
+    has_metadata: Option<bool>,
 ) -> Result<ListResponse, String> {
     let conn = get_connection()?;
-    list_medias_internal(&conn, page, per_page, media_type.map(|s| s.to_string()), query)
+    list_medias_internal(&conn, page, per_page, media_type.map(|s| s.to_string()), query, has_metadata)
 }
 
 /// Get a single media by path
@@ -617,7 +620,7 @@ mod tests {
         persist_results_internal(&mut conn, &results).unwrap();
 
         // Check if data was inserted
-        let result = list_medias_internal(&conn, None, None, None, None).unwrap();
+        let result = list_medias_internal(&conn, None, None, None, None, None).unwrap();
         assert_eq!(result.items.len(), 2);
     }
 
@@ -648,12 +651,12 @@ mod tests {
             params!["/path/audio.mp3", "Audio", "audio"],
         ).unwrap();
 
-        let result = list_medias_internal(&conn, None, None, None, None).unwrap();
+        let result = list_medias_internal(&conn, None, None, None, None, None).unwrap();
         assert_eq!(result.items.len(), 2);
         assert_eq!(result.total, 2);
 
         // Test filtering by media_type
-        let result = list_medias_internal(&conn, None, None, Some("video".to_string()), None).unwrap();
+        let result = list_medias_internal(&conn, None, None, Some("video".to_string()), None, None).unwrap();
         assert_eq!(result.items.len(), 1);
         assert_eq!(result.items[0].title, "Video");
     }

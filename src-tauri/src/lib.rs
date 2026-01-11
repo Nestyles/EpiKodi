@@ -1,4 +1,5 @@
 use dirs_next;
+use regex::Regex;
 use reqwest::blocking::Client;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
@@ -382,6 +383,46 @@ struct MetadataResult {
     poster_path: Option<String>,
 }
 
+fn extract_media_name_from_filename(file_name: &str) -> String {
+    println!("extract_media_name_from_filename: input filename '{}'", file_name);
+    // Remove file extension
+    let name = Path::new(file_name).file_stem().unwrap_or_default().to_string_lossy();
+
+    // Regex to match title: optional [group] followed by title, then optional - SxxExx etc.
+    let re = Regex::new(r"^(?:\[.*?\]\s*)*(.+?)(?:\s*-\s*S\d+E\d+.*)?$").unwrap();
+    if let Some(caps) = re.captures(&name) {
+        if let Some(title) = caps.get(1) {
+            let mut title = title.as_str().trim().to_string();
+            println!("aaa extract_media_name_from_filename: captured title '{}'", title);
+            // Trim trailing episode number if present
+            let parts: Vec<&str> = title.split_whitespace().collect();
+            if parts.len() > 1 {
+                if let Some(last) = parts.last() {
+                    if last.chars().all(|c| c.is_ascii_digit()) {
+                        title = parts[..parts.len() - 1].join(" ");
+                        println!("extract_media_name_from_filename: trimmed to '{}'", title);
+                    }
+                }
+            }
+            return title;
+        }
+    }
+    // Fallback: return the name without extension
+    let mut final_name = name.to_string();
+    println!("extract_media_name_from_filename: fallback to full name '{}'", final_name);
+    // Trim trailing episode number if present
+    let parts: Vec<&str> = final_name.split_whitespace().collect();
+    if parts.len() > 1 {
+        if let Some(last) = parts.last() {
+            if last.chars().all(|c| c.is_ascii_digit()) {
+                final_name = parts[..parts.len() - 1].join(" ");
+                println!("extract_media_name_from_filename: trimmed fallback to '{}'", final_name);
+            }
+        }
+    }
+    final_name
+}
+
 /// Fetch metadata from TMDB for a given title.
 /// Tries movie first, then TV series.
 /// Requires environment variable `TMDB_API_KEY` to be set.
@@ -394,6 +435,7 @@ fn fetch_metadata(title: &str) -> Result<serde_json::Value, String> {
     println!("fetch_metadata: api key present, preparing request");
 
     let client = Client::new();
+    let title_extracted = extract_media_name_from_filename(title);
 
     // Try movie first, then tv
     let endpoints = [
@@ -408,7 +450,7 @@ fn fetch_metadata(title: &str) -> Result<serde_json::Value, String> {
         println!("fetch_metadata: trying {} endpoint", media_type);
         let resp = client
             .get(*endpoint)
-            .query(&[("api_key", api_key.as_str()), ("query", title)])
+            .query(&[("api_key", api_key.as_str()), ("query", &title_extracted)])
             .send()
             .map_err(|e| format!("http error: {}", e))?;
 

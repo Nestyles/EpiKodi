@@ -14,6 +14,12 @@ struct MediaFile {
     media_type: String,
 }
 
+#[derive(Serialize)]
+struct ScannedDirectory {
+    path: String,
+    last_scanned: String,
+}
+
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -55,7 +61,7 @@ fn scan_directory(path: &str) -> Result<Vec<MediaFile>, String> {
     }
 
     // persist scan results to SQLite
-    if let Err(e) = persist_results(&results) {
+    if let Err(e) = persist_results(path, &results) {
         return Err(format!("failed to persist scan results: {}", e));
     }
 
@@ -85,14 +91,14 @@ fn get_db_path() -> Result<std::path::PathBuf, String> {
     Ok(base)
 }
 
-fn persist_results(results: &[MediaFile]) -> Result<(), String> {
+fn persist_results(path: &str, results: &[MediaFile]) -> Result<(), String> {
     let db_path = get_db_path()?;
     println!("Using database at {:?}", db_path);
     let mut conn = Connection::open(db_path).map_err(|e| e.to_string())?;
-    persist_results_internal(&mut conn, results)
+    persist_results_internal(&mut conn, path, results)
 }
 
-fn persist_results_internal(conn: &mut Connection, results: &[MediaFile]) -> Result<(), String> {
+fn persist_results_internal(conn: &mut Connection, path: &str, results: &[MediaFile]) -> Result<(), String> {
 
     conn.execute(
         "CREATE TABLE IF NOT EXISTS medias (
@@ -102,6 +108,15 @@ fn persist_results_internal(conn: &mut Connection, results: &[MediaFile]) -> Res
             last_position INTEGER DEFAULT 0,
             synopsis_json TEXT,
             tmdb_id INTEGER
+        )",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS scanned_directories (
+            path TEXT PRIMARY KEY,
+            last_scanned DATETIME DEFAULT CURRENT_TIMESTAMP
         )",
         [],
     )
@@ -137,6 +152,14 @@ fn persist_results_internal(conn: &mut Connection, results: &[MediaFile]) -> Res
     }
 
     tx.commit().map_err(|e| format!("commit failed: {}", e))?;
+
+    // Insert or update the scanned directory
+    conn.execute(
+        "INSERT OR REPLACE INTO scanned_directories (path, last_scanned) VALUES (?1, CURRENT_TIMESTAMP)",
+        params![path],
+    )
+    .map_err(|e| format!("failed to insert scanned directory: {}", e))?;
+
     Ok(())
 }
 
@@ -301,6 +324,24 @@ fn list_medias(
 ) -> Result<ListResponse, String> {
     let conn = get_connection()?;
     list_medias_internal(&conn, page, per_page, media_type.map(|s| s.to_string()), query, has_metadata)
+}
+
+/// List all scanned directories
+#[tauri::command]
+fn list_scanned_directories() -> Result<Vec<ScannedDirectory>, String> {
+    let conn = get_connection()?;
+    let mut stmt = conn.prepare("SELECT path, last_scanned FROM scanned_directories ORDER BY last_scanned DESC").map_err(|e| e.to_string())?;
+    let rows = stmt.query_map([], |row| {
+        Ok(ScannedDirectory {
+            path: row.get(0)?,
+            last_scanned: row.get(1)?,
+        })
+    }).map_err(|e| e.to_string())?;
+    let mut dirs = Vec::new();
+    for dir in rows {
+        dirs.push(dir.map_err(|e| e.to_string())?);
+    }
+    Ok(dirs)
 }
 
 /// Get a single media by path
@@ -674,7 +715,7 @@ mod tests {
             MediaFile { path: "/path/audio.mp3".to_string(), media_type: "audio".to_string() },
         ];
 
-        persist_results_internal(&mut conn, &results).unwrap();
+        persist_results_internal(&mut conn, "/test/path", &results).unwrap();
 
         // Check if data was inserted
         let result = list_medias_internal(&conn, None, None, None, None, None).unwrap();
@@ -874,7 +915,8 @@ pub fn run() {
             get_media,
             update_media,
             delete_media,
-            fetch_metadata
+            fetch_metadata,
+            list_scanned_directories
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

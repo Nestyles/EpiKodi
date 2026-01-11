@@ -8,7 +8,7 @@
     <br />
     <br />
     <b>Downloads for </b>
-		<a href="https://daic.re">macOS & Windows</a>
+		<a href="https://github.com/Nestyles/EpiKodi/releases">macOS & Windows</a>
     <br />
   </p>
 </p>

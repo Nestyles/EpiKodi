@@ -98,10 +98,10 @@ fn persist_results_internal(conn: &mut Connection, results: &[MediaFile]) -> Res
 
     for m in results {
         let title = Path::new(&m.path)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("")
-            .to_string();
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string();
 
         // best-effort TMDB match for video files
         let mut best_tmdb: Option<i64> = None;
@@ -791,6 +791,50 @@ mod tests {
 
         let deleted = delete_media_internal(&conn, "/path/nonexistent.mp4").unwrap();
         assert!(!deleted);
+    }
+
+    #[test]
+    fn test_extract_media_name_from_filename() {
+        // Test with group and episode info
+        assert_eq!(
+            extract_media_name_from_filename("[BREEZE] DAN DA DAN - S02E03 [1080p AV1] [DUAL AUDIO].mkv"),
+            "DAN DA DAN"
+        );
+        assert_eq!(
+
+            extract_media_name_from_filename("C:\\Users\\Nes\\Downloads\\[BREEZE] DAN DA DAN - S02E03 [1080p AV1] [DUAL AUDIO].mkv"),
+            "DAN DA DAN"
+        );
+
+        // Test without group
+        assert_eq!(
+            extract_media_name_from_filename("Another 01.mkv"),
+            "Another"
+        );
+
+        // Test with different format
+        assert_eq!(
+            extract_media_name_from_filename("[Group] Some Show - S01E01 [720p].mp4"),
+            "Some Show"
+        );
+
+        // Test movie without episode
+        assert_eq!(
+            extract_media_name_from_filename("Movie Name (2023).mp4"),
+            "Movie Name (2023)"
+        );
+
+        // Test fallback
+        assert_eq!(
+            extract_media_name_from_filename("simple.mp4"),
+            "simple"
+        );
+
+        // Test with multiple brackets
+        assert_eq!(
+            extract_media_name_from_filename("[Group1] [Group2] Title - S01E01 [1080p].mkv"),
+            "Title"
+        );
     }
 }
 

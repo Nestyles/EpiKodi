@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Button, Box, SimpleGrid, Image, Text, VStack, Spinner, Badge, Input, HStack, Flex } from "@chakra-ui/react";
+import { Button, Box, SimpleGrid, Image, Text, VStack, Spinner, Badge, Input, Flex } from "@chakra-ui/react";
 import { Checkbox } from "@chakra-ui/react";
 import { listMedias, fetchMetadata } from "../lib/tauri-commands";
 import { toaster } from "../components/ui/toaster";
@@ -102,7 +102,7 @@ function Library() {
               />
               <Checkbox.Root
                 checked={hasMetadataFilter}
-                onCheckedChange={(e) => setHasMetadataFilter(e.checked)}
+                onCheckedChange={(e) => setHasMetadataFilter(e.checked === true)}
                 size="sm"
               >
                 <Checkbox.HiddenInput />

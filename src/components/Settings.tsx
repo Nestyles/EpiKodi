@@ -43,7 +43,7 @@ function Settings() {
 
   return (
     <Box p={8} maxW="800px" mx="auto">
-      <VStack spacing={6} align="stretch">
+      <VStack align="stretch">
         <Box textAlign="center">
           <Text fontSize="3xl" fontWeight="bold" mb={2}>Settings</Text>
           <Text fontSize="lg" color="gray.500">Configure your media library</Text>

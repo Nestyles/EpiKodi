@@ -1,10 +1,5 @@
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 use dirs_next;
+use regex::Regex;
 use reqwest::blocking::Client;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
@@ -12,13 +7,25 @@ use serde_json::json;
 use std::env;
 use std::path::Path;
 use walkdir::WalkDir;
-use tauri_plugin_log::TargetKind;
 
 #[derive(Serialize)]
 struct MediaFile {
     path: String,
     media_type: String,
 }
+
+#[derive(Serialize)]
+struct ScannedDirectory {
+    path: String,
+    last_scanned: String,
+}
+
+// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+#[tauri::command]
+fn greet(name: &str) -> String {
+    format!("Hello, {}! You've been greeted from Rust!", name)
+}
+
 
 /// Scan a directory recursively and return media file paths and types.
 #[tauri::command]
@@ -36,6 +43,8 @@ fn scan_directory(path: &str) -> Result<Vec<MediaFile>, String> {
                         "mp4" | "mkv" | "mov" | "avi" | "m4v" | "webm" | "flv" => Some("video"),
                         // audio
                         "mp3" | "flac" | "wav" | "m4a" | "aac" | "ogg" => Some("audio"),
+                        // images
+                        "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" => Some("image"),
                         _ => None,
                     };
 
@@ -52,8 +61,23 @@ fn scan_directory(path: &str) -> Result<Vec<MediaFile>, String> {
     }
 
     // persist scan results to SQLite
-    if let Err(e) = persist_results(&results) {
+    if let Err(e) = persist_results(path, &results) {
         return Err(format!("failed to persist scan results: {}", e));
+    }
+
+    // Fetch metadata for videos
+    for result in &results {
+        if result.media_type == "video" {
+            let title = Path::new(&result.path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string();
+            match fetch_metadata(&title) {
+                Ok(_) => println!("Fetched metadata for '{}'", title),
+                Err(e) => eprintln!("Failed to fetch metadata for '{}': {}", title, e),
+            }
+        }
     }
 
     Ok(results)
@@ -67,14 +91,14 @@ fn get_db_path() -> Result<std::path::PathBuf, String> {
     Ok(base)
 }
 
-fn persist_results(results: &[MediaFile]) -> Result<(), String> {
+fn persist_results(path: &str, results: &[MediaFile]) -> Result<(), String> {
     let db_path = get_db_path()?;
     println!("Using database at {:?}", db_path);
     let mut conn = Connection::open(db_path).map_err(|e| e.to_string())?;
-    persist_results_internal(&mut conn, results)
+    persist_results_internal(&mut conn, path, results)
 }
 
-fn persist_results_internal(conn: &mut Connection, results: &[MediaFile]) -> Result<(), String> {
+fn persist_results_internal(conn: &mut Connection, path: &str, results: &[MediaFile]) -> Result<(), String> {
 
     conn.execute(
         "CREATE TABLE IF NOT EXISTS medias (
@@ -89,16 +113,25 @@ fn persist_results_internal(conn: &mut Connection, results: &[MediaFile]) -> Res
     )
     .map_err(|e| e.to_string())?;
 
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS scanned_directories (
+            path TEXT PRIMARY KEY,
+            last_scanned DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+
     let tx = conn
         .transaction()
         .map_err(|e| format!("failed to start transaction: {}", e))?;
 
     for m in results {
         let title = Path::new(&m.path)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("")
-            .to_string();
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string();
 
         // best-effort TMDB match for video files
         let mut best_tmdb: Option<i64> = None;
@@ -119,6 +152,14 @@ fn persist_results_internal(conn: &mut Connection, results: &[MediaFile]) -> Res
     }
 
     tx.commit().map_err(|e| format!("commit failed: {}", e))?;
+
+    // Insert or update the scanned directory
+    conn.execute(
+        "INSERT OR REPLACE INTO scanned_directories (path, last_scanned) VALUES (?1, CURRENT_TIMESTAMP)",
+        params![path],
+    )
+    .map_err(|e| format!("failed to insert scanned directory: {}", e))?;
+
     Ok(())
 }
 
@@ -209,33 +250,36 @@ fn list_medias_internal(
     conn: &Connection,
     page: Option<u32>,
     per_page: Option<u32>,
-    media_type: Option<&str>,
-    query: Option<&str>,
+    media_type: Option<String>,
+    query: Option<String>,
+    has_metadata: Option<bool>,
 ) -> Result<ListResponse, String> {
     let page = page.unwrap_or(1).max(1);
     let per_page = per_page.unwrap_or(50).clamp(1, 500);
     let offset = ((page - 1) as i64) * (per_page as i64);
 
-    let like_query = query.map(|q| format!("%{}%", q));
+    let like_query = query.as_ref().map(|q| format!("%{}%", q.to_lowercase()));
 
     // Count total
     let mut count_stmt = conn
         .prepare(
             "SELECT COUNT(*) FROM medias
              WHERE (?1 IS NULL OR media_type = ?1)
-               AND (?2 IS NULL OR title LIKE ?2 OR path LIKE ?2)",
+               AND (?2 IS NULL OR LOWER(title) LIKE ?2)
+               AND (?3 IS NULL OR (?3 = 1 AND synopsis_json IS NOT NULL) OR (?3 = 0 AND synopsis_json IS NULL))",
         )
         .map_err(|e| e.to_string())?;
 
     let total: i64 = count_stmt
-        .query_row(params![media_type, like_query.as_deref()], |r| r.get(0))
+        .query_row(params![media_type.as_deref(), like_query.as_deref(), has_metadata.map(|b| b as i32)], |r| r.get(0))
         .map_err(|e| e.to_string())?;
 
     let mut stmt = conn
         .prepare(
             "SELECT path, title, media_type, last_position, synopsis_json, tmdb_id FROM medias
              WHERE (?1 IS NULL OR media_type = ?1)
-               AND (?2 IS NULL OR title LIKE ?2 OR path LIKE ?2)
+               AND (?2 IS NULL OR LOWER(title) LIKE ?2)
+               AND (?5 IS NULL OR (?5 = 1 AND synopsis_json IS NOT NULL) OR (?5 = 0 AND synopsis_json IS NULL))
              ORDER BY title COLLATE NOCASE ASC
              LIMIT ?3 OFFSET ?4",
         )
@@ -243,7 +287,7 @@ fn list_medias_internal(
 
     let rows = stmt
         .query_map(
-            params![media_type, like_query.as_deref(), per_page as i64, offset],
+            params![media_type.as_deref(), like_query.as_deref(), per_page as i64, offset, has_metadata.map(|b| b as i32)],
             |row| {
                 Ok(MediaDb {
                     path: row.get(0)?,
@@ -261,7 +305,6 @@ fn list_medias_internal(
     for r in rows {
         items.push(r.map_err(|e| e.to_string())?);
     }
-
     Ok(ListResponse {
         items,
         total,
@@ -270,16 +313,35 @@ fn list_medias_internal(
     })
 }
 
-/// List medias with pagination and optional filters (media_type, query)
+/// List medias with pagination and optional filters (media_type, query, has_metadata)
 #[tauri::command]
 fn list_medias(
     page: Option<u32>,
     per_page: Option<u32>,
     media_type: Option<&str>,
-    query: Option<&str>,
+    query: Option<String>,
+    has_metadata: Option<bool>,
 ) -> Result<ListResponse, String> {
     let conn = get_connection()?;
-    list_medias_internal(&conn, page, per_page, media_type, query)
+    list_medias_internal(&conn, page, per_page, media_type.map(|s| s.to_string()), query, has_metadata)
+}
+
+/// List all scanned directories
+#[tauri::command]
+fn list_scanned_directories() -> Result<Vec<ScannedDirectory>, String> {
+    let conn = get_connection()?;
+    let mut stmt = conn.prepare("SELECT path, last_scanned FROM scanned_directories ORDER BY last_scanned DESC").map_err(|e| e.to_string())?;
+    let rows = stmt.query_map([], |row| {
+        Ok(ScannedDirectory {
+            path: row.get(0)?,
+            last_scanned: row.get(1)?,
+        })
+    }).map_err(|e| e.to_string())?;
+    let mut dirs = Vec::new();
+    for dir in rows {
+        dirs.push(dir.map_err(|e| e.to_string())?);
+    }
+    Ok(dirs)
 }
 
 /// Get a single media by path
@@ -377,48 +439,119 @@ struct MetadataResult {
     poster_path: Option<String>,
 }
 
-/// Fetch metadata from TMDB for a given title and mediaType ("movie" or "series").
+fn extract_media_name_from_filename(file_name: &str) -> String {
+    println!("extract_media_name_from_filename: input filename '{}'", file_name);
+    // Remove file extension
+    let name = Path::new(file_name).file_stem().unwrap_or_default().to_string_lossy();
+
+    // Regex to match title: optional [group] followed by title, then optional - SxxExx etc.
+    let re = Regex::new(r"^(?:\[.*?\]\s*)*(.+?)(?:\s*-\s*S\d+E\d+.*)?$").unwrap();
+    if let Some(caps) = re.captures(&name) {
+        if let Some(title) = caps.get(1) {
+            let mut title = title.as_str().trim().to_string();
+            println!("aaa extract_media_name_from_filename: captured title '{}'", title);
+            // Trim trailing episode number if present
+            let parts: Vec<&str> = title.split_whitespace().collect();
+            if parts.len() > 1 {
+                if let Some(last) = parts.last() {
+                    if last.chars().all(|c| c.is_ascii_digit()) {
+                        title = parts[..parts.len() - 1].join(" ");
+                        println!("extract_media_name_from_filename: trimmed to '{}'", title);
+                    }
+                }
+            }
+            return title;
+        }
+    }
+    // Fallback: return the name without extension
+    let mut final_name = name.to_string();
+    println!("extract_media_name_from_filename: fallback to full name '{}'", final_name);
+    // Trim trailing episode number if present
+    let parts: Vec<&str> = final_name.split_whitespace().collect();
+    if parts.len() > 1 {
+        if let Some(last) = parts.last() {
+            if last.chars().all(|c| c.is_ascii_digit()) {
+                final_name = parts[..parts.len() - 1].join(" ");
+                println!("extract_media_name_from_filename: trimmed fallback to '{}'", final_name);
+            }
+        }
+    }
+    final_name
+}
+
+/// Fetch metadata from TMDB for a given title.
+/// Tries movie first, then TV series.
 /// Requires environment variable `TMDB_API_KEY` to be set.
 #[tauri::command]
-fn fetch_metadata(title: &str, mediaType: &str) -> Result<serde_json::Value, String> {
-    println!("fetch_metadata: start for '{}' ({})", title, mediaType);
+fn fetch_metadata(title: &str) -> Result<serde_json::Value, String> {
+    println!("fetch_metadata: start for '{}'", title);
 
     let api_key =
         env::var("TMDB_API_KEY").map_err(|_| "TMDB_API_KEY env var is not set".to_string())?;
     println!("fetch_metadata: api key present, preparing request");
 
     let client = Client::new();
+    let title_extracted = extract_media_name_from_filename(title);
 
-    let endpoint = match mediaType {
-        "movie" => "https://api.themoviedb.org/3/search/movie",
-        "series" | "tv" => "https://api.themoviedb.org/3/search/tv",
-        _ => return Err("mediaType must be 'movie' or 'series'".to_string()),
-    };
+    // Try movie first, then tv
+    let endpoints = [
+        ("movie", "https://api.themoviedb.org/3/search/movie"),
+        ("tv", "https://api.themoviedb.org/3/search/tv"),
+    ];
 
-    println!("fetch_metadata: sending request to {}", endpoint);
-    let resp = client
-        .get(endpoint)
-        .query(&[("api_key", api_key.as_str()), ("query", title)])
-        .send()
-        .map_err(|e| format!("http error: {}", e))?;
+    let mut best_result: Option<serde_json::Value> = None;
+    let mut best_id: Option<i64> = None;
 
-    println!("fetch_metadata: received status {}", resp.status());
-    if !resp.status().is_success() {
-        return Err(format!("TMDB returned status {}", resp.status()));
+    for (media_type, endpoint) in endpoints.iter() {
+        println!("fetch_metadata: trying {} endpoint", media_type);
+        let resp = client
+            .get(*endpoint)
+            .query(&[("api_key", api_key.as_str()), ("query", &title_extracted)])
+            .send()
+            .map_err(|e| format!("http error: {}", e))?;
+
+        println!("fetch_metadata: received status {}", resp.status());
+        if !resp.status().is_success() {
+            continue;
+        }
+
+        println!("fetch_metadata: parsing JSON response");
+        let v: serde_json::Value = resp.json().map_err(|e| format!("parse error: {}", e))?;
+        let results = v
+            .get("results")
+            .and_then(|r| r.as_array())
+            .ok_or("no results")?;
+        if results.is_empty() {
+            continue;
+        }
+
+        let first = results.get(0).ok_or("no results for query")?;
+
+        let id = first
+            .get("id")
+            .and_then(|i| i.as_i64())
+            .ok_or("no id in result")?;
+
+        // Check popularity/vote_count to prefer better matches
+        let popularity = first
+            .get("popularity")
+            .and_then(|p| p.as_f64())
+            .unwrap_or(0.0);
+        let vote_count = first
+            .get("vote_count")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+
+        if popularity >= 2.0 || vote_count >= 20 {
+            println!("fetch_metadata: found good match with id {}", id);
+            best_result = Some(first.clone());
+            best_id = Some(id);
+            break; // prefer movie over tv if both match
+        }
     }
 
-    println!("fetch_metadata: parsing JSON response");
-    let v: serde_json::Value = resp.json().map_err(|e| format!("parse error: {}", e))?;
-    let results = v
-        .get("results")
-        .and_then(|r| r.as_array())
-        .ok_or("no results")?;
-    let first = results.get(0).ok_or("no results for query")?;
-
-    let id = first
-        .get("id")
-        .and_then(|i| i.as_i64())
-        .ok_or("no id in result")?;
+    let first = best_result.ok_or("no suitable results found")?;
+    let id = best_id.unwrap();
 
     println!("fetch_metadata: selected TMDB id {}", id);
 
@@ -582,10 +715,10 @@ mod tests {
             MediaFile { path: "/path/audio.mp3".to_string(), media_type: "audio".to_string() },
         ];
 
-        persist_results_internal(&mut conn, &results).unwrap();
+        persist_results_internal(&mut conn, "/test/path", &results).unwrap();
 
         // Check if data was inserted
-        let result = list_medias_internal(&conn, None, None, None, None).unwrap();
+        let result = list_medias_internal(&conn, None, None, None, None, None).unwrap();
         assert_eq!(result.items.len(), 2);
     }
 
@@ -616,12 +749,12 @@ mod tests {
             params!["/path/audio.mp3", "Audio", "audio"],
         ).unwrap();
 
-        let result = list_medias_internal(&conn, None, None, None, None).unwrap();
+        let result = list_medias_internal(&conn, None, None, None, None, None).unwrap();
         assert_eq!(result.items.len(), 2);
         assert_eq!(result.total, 2);
 
         // Test filtering by media_type
-        let result = list_medias_internal(&conn, None, None, Some("video"), None).unwrap();
+        let result = list_medias_internal(&conn, None, None, Some("video".to_string()), None, None).unwrap();
         assert_eq!(result.items.len(), 1);
         assert_eq!(result.items[0].title, "Video");
     }
@@ -715,6 +848,50 @@ mod tests {
         let deleted = delete_media_internal(&conn, "/path/nonexistent.mp4").unwrap();
         assert!(!deleted);
     }
+
+    #[test]
+    fn test_extract_media_name_from_filename() {
+        // Test with group and episode info
+        assert_eq!(
+            extract_media_name_from_filename("[BREEZE] DAN DA DAN - S02E03 [1080p AV1] [DUAL AUDIO].mkv"),
+            "DAN DA DAN"
+        );
+        assert_eq!(
+
+            extract_media_name_from_filename("C:\\Users\\Nes\\Downloads\\[BREEZE] DAN DA DAN - S02E03 [1080p AV1] [DUAL AUDIO].mkv"),
+            "DAN DA DAN"
+        );
+
+        // Test without group
+        assert_eq!(
+            extract_media_name_from_filename("Another 01.mkv"),
+            "Another"
+        );
+
+        // Test with different format
+        assert_eq!(
+            extract_media_name_from_filename("[Group] Some Show - S01E01 [720p].mp4"),
+            "Some Show"
+        );
+
+        // Test movie without episode
+        assert_eq!(
+            extract_media_name_from_filename("Movie Name (2023).mp4"),
+            "Movie Name (2023)"
+        );
+
+        // Test fallback
+        assert_eq!(
+            extract_media_name_from_filename("simple.mp4"),
+            "simple"
+        );
+
+        // Test with multiple brackets
+        assert_eq!(
+            extract_media_name_from_filename("[Group1] [Group2] Title - S01E01 [1080p].mkv"),
+            "Title"
+        );
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -738,7 +915,8 @@ pub fn run() {
             get_media,
             update_media,
             delete_media,
-            fetch_metadata
+            fetch_metadata,
+            list_scanned_directories
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,18 +1,41 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Button, HStack, Input, Textarea, Box, Text, VStack } from "@chakra-ui/react";
+import { Button, HStack, Input, Textarea, Box, Text, VStack, List } from "@chakra-ui/react";
 import { open } from "@tauri-apps/plugin-dialog";
+
+interface ScannedDirectory {
+  path: string;
+  last_scanned: string;
+}
 
 function Settings() {
   const navigate = useNavigate();
   const [scanPath, setScanPath] = useState<string>("");
   const [scanResult, setScanResult] = useState<any>(null);
+  const [scannedDirectories, setScannedDirectories] = useState<ScannedDirectory[]>([]);
+
+  async function fetchScannedDirectories() {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const res = await invoke("list_scanned_directories");
+      console.log("Scan result:", res);
+      setScannedDirectories(res as ScannedDirectory[]);
+    } catch (e) {
+      console.error("Failed to fetch scanned directories:", e);
+    }
+  }
+
+  useEffect(() => {
+    fetchScannedDirectories();
+  }, []);
 
   async function scanDirectory() {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       const res = await invoke("scan_directory", { path: scanPath });
       setScanResult(res);
+      // Refresh the scanned directories list
+      await fetchScannedDirectories();
     } catch (e) {
       setScanResult({ error: String(e) });
     }
@@ -53,6 +76,19 @@ function Settings() {
               minH="120px"
             />
           </Box>
+        </Box>
+
+        <Box>
+          <Text fontSize="xl" fontWeight="semibold" mb={4}>Scanned Directories</Text>
+          <List.Root>
+            {scannedDirectories.length > 0 ? (
+              scannedDirectories.map((dir, index) => (
+                <List.Item key={index}>{dir.path} - Last scanned: {dir.last_scanned}</List.Item>
+              ))
+            ) : (
+              <Text color="gray.500">No directories scanned yet.</Text>
+            )}
+          </List.Root>
         </Box>
 
         <Button onClick={() => navigate('/')} colorScheme="blue">Back to Library</Button>

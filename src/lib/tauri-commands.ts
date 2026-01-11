@@ -4,8 +4,8 @@ export async function scanDirectory(path: string) {
   return invoke("scan_directory", { path });
 }
 
-export async function fetchMetadata(title: string, mediaType: "movie" | "series") {
-  return invoke("fetch_metadata", { title, mediaType });
+export async function fetchMetadata(title: string) {
+  return invoke("fetch_metadata", { title });
 }
 
 export async function listMedias(options?: {
@@ -13,9 +13,10 @@ export async function listMedias(options?: {
   per_page?: number;
   media_type?: string | null;
   query?: string | null;
+  has_metadata?: boolean | null;
 }) {
-  const { page = 1, per_page = 50, media_type = null, query = null } = options || {};
-  return invoke("list_medias", { page, per_page, media_type, query });
+  const { page = 1, per_page = 50, media_type, query = null, has_metadata = null } = options || {};
+  return invoke("list_medias", { page, perPage: per_page, mediaType: media_type, query, hasMetadata: has_metadata });
 }
 
 export async function getMedia(path: string) {

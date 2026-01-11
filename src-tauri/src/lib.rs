@@ -59,6 +59,21 @@ fn scan_directory(path: &str) -> Result<Vec<MediaFile>, String> {
         return Err(format!("failed to persist scan results: {}", e));
     }
 
+    // Fetch metadata for videos
+    for result in &results {
+        if result.media_type == "video" {
+            let title = Path::new(&result.path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string();
+            match fetch_metadata(&title) {
+                Ok(_) => println!("Fetched metadata for '{}'", title),
+                Err(e) => eprintln!("Failed to fetch metadata for '{}': {}", title, e),
+            }
+        }
+    }
+
     Ok(results)
 }
 

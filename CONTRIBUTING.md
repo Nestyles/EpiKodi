@@ -19,6 +19,23 @@ There are many ways to contribute to Cap. You can:
 - [Report a bug](https://github.com/Nestyles/EpiKodi/issues/new)
 - Submit a PR
 
+## Documentation
+
+Developer-focused technical documentation is available in the `tech_docs` folder (mdBook format). It contains architecture overviews, development guides, and deep dives useful when working on core features.
+
+User-facing documentation lives in the `user_docs` folder and describes common workflows and UI actions (scanning, playback, metadata fetching, etc.).
+
+To preview either set locally, run:
+
+```powershell
+cd tech_docs
+mdbook serve
+
+# or
+cd user_docs
+mdbook serve
+```
+
 ## Running EpiKodi
 
 ### Development Requirements

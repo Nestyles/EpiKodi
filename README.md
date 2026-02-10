@@ -33,3 +33,21 @@ Portions of this software are licensed as follows:
 # Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for more information. This guide is a work in progress, and is updated regularly as the app matures.
+
+## Documentation
+
+- **Technical Docs**: Developer and architecture documentation is in `tech_docs` (mdBook). Open it locally with:
+
+```powershell
+cd tech_docs
+mdbook serve
+```
+
+- **User Docs**: End-user guides and walkthroughs are in `user_docs` (mdBook). Preview locally with:
+
+```powershell
+cd user_docs
+mdbook serve
+```
+
+Both sets are included in the repository to keep documentation close to the code and easy to update when APIs or UX change.
